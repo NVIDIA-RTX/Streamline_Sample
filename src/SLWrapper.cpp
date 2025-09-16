@@ -223,6 +223,9 @@ bool SLWrapper::Initialize_preDevice(nvrhi::GraphicsAPI api)
 #ifdef STREAMLINE_FEATURE_LATEWARP
         sl::kFeatureLatewarp,
 #endif
+#ifdef STREAMLINE_FEATURE_IMGUI
+        sl::kFeatureImGUI,
+#endif
         // PCL is always implicitly loaded, but request it to ensure we never have 0-sized array
         sl::kFeaturePCL
     };
