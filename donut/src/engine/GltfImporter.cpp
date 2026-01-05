@@ -100,75 +100,6 @@ void cgltf_release_file_vfs(const struct cgltf_memory_options*, const struct cgl
     // do nothing
 }
 
-// glTF only support DDS images through the MSFT_texture_dds extension.
-// Since cgltf does not support this extension, we parse the custom extension string as json here.
-// See https://github.com/KhronosGroup/glTF/tree/master/extensions/2.0/Vendor/MSFT_texture_dds 
-static const cgltf_image* ParseDdsImage(const cgltf_texture* texture, const cgltf_data* objects)
-{
-    for (size_t i = 0; i < texture->extensions_count; i++)
-    {
-        const cgltf_extension& ext = texture->extensions[i];
-
-        if (!ext.name || !ext.data)
-            continue;
-
-        if (strcmp(ext.name, "MSFT_texture_dds") != 0)
-            continue;
-
-        size_t extensionLength = strlen(ext.data);
-        if (extensionLength > 1024)
-            return nullptr; // safeguard against weird inputs
-
-        jsmn_parser parser;
-        jsmn_init(&parser);
-
-        // count the tokens, normally there are 3
-        int numTokens = jsmn_parse(&parser, ext.data, extensionLength, nullptr, 0);
-
-        // allocate the tokens on the stack
-        jsmntok_t* tokens = (jsmntok_t*)alloca(numTokens * sizeof(jsmntok_t));
-
-        // reset the parser and prse
-        jsmn_init(&parser);
-        int numParsed = jsmn_parse(&parser, ext.data, extensionLength, tokens, numTokens);
-        if (numParsed != numTokens)
-            goto fail;
-
-        if (tokens[0].type != JSMN_OBJECT)
-            goto fail; // expecting that the extension is an object
-
-        for (int k = 1; k < numTokens; k++)
-        {
-            if (tokens[k].type != JSMN_STRING)
-                goto fail; // expecting a string key
-            
-            if (cgltf_json_strcmp(tokens + k, (const uint8_t*)ext.data, "source") == 0)
-            {
-                ++k;
-                int index = cgltf_json_to_int(tokens + k, (const uint8_t*)ext.data);
-                if (index < 0)
-                    goto fail; // expecting a non-negative integer; non-value results in CGLTF_ERROR_JSON which is negative
-
-                if (size_t(index) >= objects->images_count)
-                {
-                    donut::log::warning("Invalid image index %d specified in glTF texture definition", index);
-                    return nullptr;
-                }
-
-                return objects->images + index;
-            }
-
-            // this was something else - skip it
-            k = cgltf_skip_json(tokens, k);
-        }
-
-    fail:
-        donut::log::warning("Failed to parse the DDS glTF extension: %s", ext.data);
-        return nullptr;
-    }
-
-    return nullptr;
-}
 
 namespace
 {
@@ -193,6 +124,229 @@ namespace
         cgltf_float diffuseReflectionWeight;
         cgltf_float diffuse_reflection_tint[3];
     } cgltf_hair;
+
+    typedef struct cgltf_texture_swizzle
+    {
+        cgltf_image* source = nullptr;
+        cgltf_int numChannels = 0;
+        cgltf_int channels[4]{};
+    } cgltf_texture_swizzle;
+
+    typedef struct cgltf_texture_extensions
+    {
+        cgltf_image* ddsImage = nullptr;
+        std::vector<cgltf_texture_swizzle> swizzleOptions;
+    } cgltf_texture_extensions;
+}
+
+// Parses the image reference from an MSFT_texture_dds extension.
+// See https://github.com/KhronosGroup/glTF/tree/master/extensions/2.0/Vendor/MSFT_texture_dds 
+static int cgltf_parse_texture_dds(jsmntok_t* tokens, int i, const uint8_t* json_chunk,
+    cgltf_image** out_image, const cgltf_data* objects)
+{
+    CGLTF_CHECK_TOKTYPE(tokens[i], JSMN_OBJECT);
+
+    int size = tokens[i].size;
+    ++i;
+
+    for (int j = 0; j < size; ++j)
+    {
+        CGLTF_CHECK_KEY(tokens[i]);
+
+        if (cgltf_json_strcmp(tokens + i, json_chunk, "source") == 0)
+        {
+            ++i;
+            int index = cgltf_json_to_int(tokens + i, json_chunk);
+            ++i;
+            
+            if (index >= 0 && index < objects->images_count)
+                *out_image = objects->images + index;
+            else
+                return CGLTF_ERROR_JSON;
+        }
+        else
+        {
+            i = cgltf_skip_json(tokens, i + 1);
+        }
+
+        if (i < 0)
+        {
+            return i;
+        }
+    }
+
+    return i;
+}
+
+// Parses a single texture swizzle option into a cgltf_texture_swizzle object.
+// See the comment to cgltf_parse_texture_swizzle_options for an example input.
+static int cgltf_parse_texture_swizzle(jsmntok_t* tokens, int i, const uint8_t* json_chunk,
+    cgltf_texture_swizzle* out_swizzle, const cgltf_data* objects)
+{
+    CGLTF_CHECK_TOKTYPE(tokens[i], JSMN_OBJECT);
+
+    int size = tokens[i].size;
+    ++i;
+
+    for (int j = 0; j < size; ++j)
+    {
+        CGLTF_CHECK_KEY(tokens[i]);
+
+        if (cgltf_json_strcmp(tokens + i, json_chunk, "source") == 0)
+        {
+            ++i;
+            int index = cgltf_json_to_int(tokens + i, json_chunk);
+            ++i;
+            
+            if (index >= 0 && index < objects->images_count)
+                out_swizzle->source = objects->images + index;
+            else
+                return CGLTF_ERROR_JSON;
+        }
+        else if (cgltf_json_strcmp(tokens + i, json_chunk, "channels") == 0)
+        {
+            ++i;
+            CGLTF_CHECK_TOKTYPE(tokens[i], JSMN_ARRAY);
+
+            int size = tokens[i].size;
+            if (size > 4)
+                return CGLTF_ERROR_JSON;
+            ++i;
+
+            for (int channelIdx = 0; channelIdx < size; ++channelIdx)
+            {
+                CGLTF_CHECK_TOKTYPE(tokens[i], JSMN_PRIMITIVE);
+                int ch = cgltf_json_to_int(tokens + i, json_chunk);
+                out_swizzle->channels[channelIdx] = ch;
+                ++i;
+            }
+
+            out_swizzle->numChannels = size;
+        }
+        else
+        {
+            i = cgltf_skip_json(tokens, i + 1);
+        }
+
+        if (i < 0)
+        {
+            return i;
+        }
+    }
+
+    return i;
+}
+
+// Parses an array of texture swizzle options from "NV_texture_swizzle" extension into a cgltf_texture_extensions object.
+// There is no public spec for NV_texture_swizzle at this time.
+// Example extensions for a glTF texture object:
+//
+// "extensions": {
+//     "NV_texture_swizzle": {
+//         "options": [
+//             {
+//                 "source": <gltf-image-index>,
+//                 "channels": [1, 2, ...]
+//             },
+//             { ... }
+//         ]
+//     }
+// }
+static int cgltf_parse_texture_swizzle_options(jsmntok_t* tokens, int i, const uint8_t* json_chunk,
+    cgltf_texture_extensions* out_extensions, const cgltf_data* objects)
+{
+    CGLTF_CHECK_TOKTYPE(tokens[i], JSMN_OBJECT);
+
+    int size = tokens[i].size;
+    ++i;
+
+    for (int j = 0; j < size; ++j)
+    {
+        CGLTF_CHECK_KEY(tokens[i]);
+        
+        if (cgltf_json_strcmp(tokens + i, json_chunk, "options") == 0)
+        {
+            ++i;
+            CGLTF_CHECK_TOKTYPE(tokens[i], JSMN_ARRAY);
+
+            int numOptions = tokens[i].size;
+            ++i;
+            
+            for (int swizzleIdx = 0; swizzleIdx < numOptions; ++swizzleIdx)
+            {
+                cgltf_texture_swizzle swizzle;
+                i = cgltf_parse_texture_swizzle(tokens, i, json_chunk, &swizzle, objects);
+                if (i < 0)
+                    return i;
+                out_extensions->swizzleOptions.push_back(swizzle);
+            }
+        }
+        else
+        {
+            i = cgltf_skip_json(tokens, i + 1);
+        }
+
+        if (i < 0)
+        {
+            return i;
+        }
+    }
+
+    return i;   
+}
+
+// Processes all supported extensions for a glTF texture object.
+static cgltf_texture_extensions cgltf_parse_texture_extensions(const cgltf_texture* texture, const cgltf_data* objects)
+{
+    cgltf_texture_extensions result{};
+
+    for (size_t i = 0; i < texture->extensions_count; i++)
+    {
+        const cgltf_extension& ext = texture->extensions[i];
+
+        if (!ext.name || !ext.data)
+            continue;
+
+        bool isDDS = strcmp(ext.name, "MSFT_texture_dds") == 0;
+        bool isSwizzle = strcmp(ext.name, "NV_texture_swizzle") == 0;
+        if (!isDDS && !isSwizzle)
+            continue;
+
+        size_t extensionLength = strlen(ext.data);
+        if (extensionLength > 2048)
+            return result; // safeguard against weird inputs
+
+        jsmn_parser parser;
+        jsmn_init(&parser);
+
+        constexpr int c_MaxTokens = 64;
+        jsmntok_t tokens[c_MaxTokens];
+        
+        int k = 0;
+        
+        // parse the string into tokens
+        int numTokens = jsmn_parse(&parser, ext.data, extensionLength, tokens, c_MaxTokens);
+        if (numTokens < 0)
+            goto fail;
+
+        if (isDDS)
+        {
+            if (cgltf_parse_texture_dds(tokens, k, (const uint8_t*)ext.data, &result.ddsImage, objects) < 0)
+                goto fail;
+        }
+        else if (isSwizzle)
+        {
+            if (cgltf_parse_texture_swizzle_options(tokens, k, (const uint8_t*)ext.data, &result, objects) < 0)
+                goto fail;
+        }
+        
+        continue;
+
+    fail:
+        donut::log::warning("Failed to parse glTF extension %s: %s", ext.name, ext.data);
+    }
+
+    return result;
 }
 
 // Parse subsurface scattering extension for glTF material:
@@ -526,34 +680,27 @@ bool GltfImporter::Load(
         return false;
     }
 
-    std::unordered_map<const cgltf_image*, std::shared_ptr<LoadedTexture>> textures;
+    std::unordered_map<const cgltf_image*, std::shared_ptr<GltfInlineData>> inlineImageDataCache;
 
-    auto load_texture = [this, &textures, &textureCache, executor, &fileName, objects, &vfsContext, c_SearchForDds](const cgltf_texture* texture, bool sRGB)
+    auto load_image_data = [this, &inlineImageDataCache, &fileName, objects, &vfsContext, &options]
+        (const cgltf_image* image, bool searchForDDS)
     {
-        if (!texture)
-            return std::shared_ptr<LoadedTexture>(nullptr);
+        FilePathOrInlineData result;
+        auto it = inlineImageDataCache.find(image);
+        if (it != inlineImageDataCache.end())
+        {
+            result.data = it->second;
+            return result;
+        }
 
-        // See if the extensions include a DDS image
-        const cgltf_image* ddsImage = ParseDdsImage(texture, objects);
-
-        if ((!texture->image || (!texture->image->uri && !texture->image->buffer_view)) && (!ddsImage || (!ddsImage->uri && !ddsImage->buffer_view)))
-            return std::shared_ptr<LoadedTexture>(nullptr);
-
-        // Pick either DDS or standard image, prefer DDS
-        const cgltf_image* activeImage = (ddsImage && (ddsImage->uri || ddsImage->buffer_view)) ? ddsImage : texture->image;
-
-        auto it = textures.find(activeImage);
-        if (it != textures.end())
-            return it->second;
-
-        std::shared_ptr<LoadedTexture> loadedTexture;
-
-        if (activeImage->buffer_view)
+        uint64_t imageIndex = image - objects->images;
+            
+        if (image->buffer_view)
         {
             // If the image has inline data, like coming from a GLB container, use that.
 
-            const uint8_t* dataPtr = static_cast<const uint8_t*>(activeImage->buffer_view->buffer->data) + activeImage->buffer_view->offset;
-            const size_t dataSize = activeImage->buffer_view->size;
+            const uint8_t* dataPtr = static_cast<const uint8_t*>(image->buffer_view->buffer->data) + image->buffer_view->offset;
+            const size_t dataSize = image->buffer_view->size;
 
             // We need to have a managed pointer to the texture data for async decoding.
             std::shared_ptr<IBlob> textureData;
@@ -582,28 +729,64 @@ bool GltfImporter::Load(
                 textureData = std::make_shared<vfs::Blob>(dataCopy, dataSize);
             }
 
-            uint64_t imageIndex = activeImage - objects->images;
-            std::string name = activeImage->name ? activeImage->name : fileName.filename().generic_string() + "[" + std::to_string(imageIndex) + "]";
-            std::string mimeType = activeImage->mime_type ? activeImage->mime_type : "";
+            result.data = std::make_shared<GltfInlineData>();
+            result.data->name = image->name
+                ? image->name
+                : fileName.filename().generic_string() + "[" + std::to_string(imageIndex) + "]";
+            result.data->mimeType = image->mime_type ? image->mime_type : "";
+            result.data->buffer = textureData;
 
-#ifdef DONUT_WITH_TASKFLOW
-            if (executor)
-                loadedTexture = textureCache.LoadTextureFromMemoryAsync(textureData, name, mimeType, sRGB, *executor);
+            inlineImageDataCache[image] = result.data;
+        }
+        else if (image->uri && strncmp(image->uri, "data:", 5) == 0)
+        {
+            // Decode a Data URI
+            char* comma = strchr(image->uri, ',');
+
+            if (comma && comma - image->uri >= 7 && strncmp(comma - 7, ";base64", 7) == 0)
+            {
+                char* base64data = comma + 1;
+
+                // cgltf doesn't understand Base64 padding with = characters, replace them with A (0)
+                size_t len = strlen(base64data);
+                while (len > 0 && base64data[len-1] == '=')
+                    base64data[--len] = 'A';
+
+                // Derive the size of the decoded buffer
+                size_t size = (len * 6 + 7) / 8;
+
+                // Decode the Base64 data
+                void* data = nullptr;
+                cgltf_result res = cgltf_load_buffer_base64(&options, size, base64data, &data);
+
+                if (res == cgltf_result_success)
+                {
+                    result.data = std::make_shared<GltfInlineData>();
+                    result.data->name = image->name
+                        ? image->name
+                        : fileName.filename().generic_string() + "[" + std::to_string(imageIndex) + "]";
+                    result.data->mimeType = image->mime_type ? image->mime_type : "";
+                    result.data->buffer = std::make_shared<vfs::Blob>(data, size);
+
+                    inlineImageDataCache[image] = result.data;
+                }
+                else
+                    log::warning("Failed to decode Base64 data for image %d, ignoring.", int(imageIndex));
+            }
             else
-#endif
-                loadedTexture = textureCache.LoadTextureFromMemoryDeferred(textureData, name, mimeType, sRGB);
+                log::warning("Couldn't find a Base64 marker in Data URI for image %d, ignoring.", int(imageIndex));
         }
         else
         {
             // Decode %-encoded characters in the URI, because cgltf doesn't do that for some reason.
-            std::string uri = activeImage->uri;
+            std::string uri = image->uri;
             cgltf_decode_uri(uri.data());
 
             // No inline data - read a file.
             std::filesystem::path filePath = fileName.parent_path() / uri;
 
             // Try to replace the texture with DDS, if enabled.
-            if (c_SearchForDds && !ddsImage)
+            if (searchForDDS)
             {
                 std::filesystem::path filePathDDS = filePath;
 
@@ -613,14 +796,141 @@ bool GltfImporter::Load(
                     filePath = filePathDDS;
             }
 
+            result.path = filePath.generic_string();
+        }
+
+        return result;
+    };
+
+    std::unordered_map<const cgltf_image*, std::shared_ptr<LoadedTexture>> imageCache;
+
+    auto load_image = [this, &imageCache, &textureCache, executor, &fileName, objects, &vfsContext, &load_image_data]
+        (const cgltf_image* image, bool sRGB, bool searchForDDS)
+    {
+        auto it = imageCache.find(image);
+        if (it != imageCache.end())
+            return it->second;
+
+        std::shared_ptr<LoadedTexture> loadedTexture;
+        FilePathOrInlineData textureSource = load_image_data(image, searchForDDS);
+
+        if (textureSource.data)
+        {
 #ifdef DONUT_WITH_TASKFLOW
             if (executor)
-                loadedTexture = textureCache.LoadTextureFromFileAsync(filePath, sRGB, *executor);
+                loadedTexture = textureCache.LoadTextureFromMemoryAsync(textureSource.data->buffer,
+                    textureSource.data->name, textureSource.data->mimeType, sRGB, *executor);
             else
 #endif
-                loadedTexture = textureCache.LoadTextureFromFileDeferred(filePath, sRGB);
+                loadedTexture = textureCache.LoadTextureFromMemoryDeferred(textureSource.data->buffer,
+                    textureSource.data->name, textureSource.data->mimeType, sRGB);
         }
-        textures[activeImage] = loadedTexture;
+        else if (!textureSource.path.empty())
+        {
+#ifdef DONUT_WITH_TASKFLOW
+            if (executor)
+                loadedTexture = textureCache.LoadTextureFromFileAsync(textureSource.path, sRGB, *executor);
+            else
+#endif
+                loadedTexture = textureCache.LoadTextureFromFileDeferred(textureSource.path, sRGB);
+        }
+
+        imageCache[image] = loadedTexture;
+        return loadedTexture;
+    };
+
+    std::unordered_map<const cgltf_texture*, std::shared_ptr<LoadedTexture>> gltfTextureCache;
+
+    auto load_texture = [this, objects, c_SearchForDds, &gltfTextureCache, &load_image, &load_image_data]
+        (const cgltf_texture* texture, bool sRGB)
+    {
+        if (!texture)
+            return std::shared_ptr<LoadedTexture>(nullptr);
+
+        auto it = gltfTextureCache.find(texture);
+        if (it != gltfTextureCache.end())
+            return it->second;
+
+        cgltf_texture_extensions const extensions = cgltf_parse_texture_extensions(texture, objects);
+
+        std::shared_ptr<LoadedTexture> loadedTexture;
+        
+        // See if the extensions include a DDS image.
+        // Try loading the DDS first if it's specified, fall back to the regular image.
+        cgltf_image const* ddsImage = extensions.ddsImage;
+        if (ddsImage)
+            loadedTexture = load_image(ddsImage, sRGB, false);
+        if (!loadedTexture && texture->image)
+            loadedTexture = load_image(texture->image, sRGB, c_SearchForDds);
+
+        // If the texture swizzle extension is present, load the source images and transfer the swizzle data
+        if (!extensions.swizzleOptions.empty())
+        {
+            if (!loadedTexture)
+            {
+                loadedTexture = std::make_shared<LoadedTexture>();
+            }
+
+            std::vector<TextureSwizzle> convertedOptions;
+            for (auto const& swizzleOption : extensions.swizzleOptions)
+            {
+                auto& dst = convertedOptions.emplace_back();
+                dst.source = load_image_data(swizzleOption.source, false);
+                dst.numChannels = swizzleOption.numChannels;
+                for (int ch = 0; ch < swizzleOption.numChannels; ++ch)
+                {
+                    dst.channels[ch] = swizzleOption.channels[ch];
+                }
+            }
+
+            if (!loadedTexture->swizzleOptions.empty())
+            {
+                if (loadedTexture->swizzleOptions.size() == convertedOptions.size())
+                {
+                    for (size_t optionIdx = 0; optionIdx < loadedTexture->swizzleOptions.size(); ++optionIdx)
+                    {
+                        // Check if the sources match
+                        
+                        if (loadedTexture->swizzleOptions[optionIdx].source != convertedOptions[optionIdx].source)
+                        {
+                            log::warning("Different glTF texture objects are using the same image '%s' but different "
+                                " swizzle sources '%s' and '%s'. Ignoring the second swizzle definition.",
+                                loadedTexture->path.c_str(),
+                                loadedTexture->swizzleOptions[optionIdx].source.ToString().c_str(),
+                                convertedOptions[optionIdx].source.ToString().c_str());
+                            break;
+                        }
+
+                        // Merge the new definition and swizzle pattern into the existing one
+
+                        loadedTexture->swizzleOptions[optionIdx].numChannels = std::max(
+                            convertedOptions[optionIdx].numChannels,
+                            loadedTexture->swizzleOptions[optionIdx].numChannels);
+
+                        for (int ch = 0; ch < convertedOptions[optionIdx].numChannels; ++ch)
+                        {
+                            if (convertedOptions[optionIdx].channels[ch] >= 0)
+                            {
+                                loadedTexture->swizzleOptions[optionIdx].channels[ch] =
+                                    convertedOptions[optionIdx].channels[ch];
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    log::warning("Different glTF texture objects are using the same image '%s' but different "
+                        " numbers of swizzle options. Ignoring the second swizzle definition.",
+                        loadedTexture->path.c_str());
+                }
+            }
+            else
+            {
+                loadedTexture->swizzleOptions = std::move(convertedOptions);
+            }
+        }
+
+        gltfTextureCache[texture] = loadedTexture;
         return loadedTexture;
     };
 
@@ -1283,14 +1593,13 @@ bool GltfImporter::Load(
 
                     if (target_positions)
                     {
-                        auto [positionSrc, positionStride] = cgltf_buffer_iterator(positions, sizeof(float) * 3);
                         auto [morphTargetPositionSrc, morphTargetPositionStride] = cgltf_buffer_iterator(target_positions, sizeof(float) * 3);
 
                         auto& morphTargetCurrentFrameData = morphTargetData[target_idx];
                         morphTargetCurrentFrameData.resize(morphTargetTotalVertices);
 
                         float3* morphTargetCurrentData = morphTargetCurrentFrameData.data() + totalVertices;
-                        for (size_t v_idx = 0; v_idx < positions->count; v_idx++)
+                        for (size_t v_idx = 0; v_idx < target_positions->count; v_idx++)
                         {
                             *morphTargetCurrentData = *(const float3*)morphTargetPositionSrc;
 
@@ -1298,11 +1607,9 @@ bool GltfImporter::Load(
 
                             morphTargetPositionSrc += morphTargetPositionStride;
                             ++morphTargetCurrentData;
-
-                            positionSrc += positionStride;
                         }
 
-                        morphTargetDataCount += positions->count;
+                        morphTargetDataCount += target_positions->count;
                     }
                 }
             }

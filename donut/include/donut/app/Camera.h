@@ -98,11 +98,12 @@ namespace donut::app
         std::pair<bool, dm::float3> AnimateTranslation(float deltaT);
         void UpdateCamera(dm::float3 cameraMoveVec, dm::affine3 cameraRotation);
 
-        dm::float2 mousePos;
-        dm::float2 mousePosPrev;
-        // fields used only for AnimateSmooth()
-        dm::float2 mousePosDamp;
-        bool isMoving = false;
+        dm::float2 m_MousePos = 0.f;
+        dm::float2 m_MousePosPrev = 0.f;
+        dm::float2 m_MouseMotionAccumulator = 0.f;
+        dm::float3 m_CameraMovePrev = 0.f;
+        dm::float3 m_CameraMoveDamp = 0.f;
+        bool m_IsDragging = false;
 
         typedef enum
         {
@@ -136,7 +137,7 @@ namespace donut::app
             MouseButtonFirst = Left,
         } MouseButtons;
 
-        const std::unordered_map<int, int> keyboardMap = {
+        const std::unordered_map<int, int> m_KeyboardMap = {
             { GLFW_KEY_Q, KeyboardControls::MoveDown },
             { GLFW_KEY_E, KeyboardControls::MoveUp },
             { GLFW_KEY_A, KeyboardControls::MoveLeft },
@@ -155,14 +156,14 @@ namespace donut::app
             { GLFW_KEY_RIGHT_CONTROL, KeyboardControls::SlowDown },
         };
 
-        const std::unordered_map<int, int> mouseButtonMap = {
+        const std::unordered_map<int, int> m_MouseButtonMap = {
             { GLFW_MOUSE_BUTTON_LEFT, MouseButtons::Left },
             { GLFW_MOUSE_BUTTON_MIDDLE, MouseButtons::Middle },
             { GLFW_MOUSE_BUTTON_RIGHT, MouseButtons::Right },
         };
 
-        std::array<bool, KeyboardControls::KeyboardControlCount> keyboardState = { false };
-        std::array<bool, MouseButtons::MouseButtonCount> mouseButtonState = { false };
+        std::array<bool, KeyboardControls::KeyboardControlCount> m_KeyboardState = { false };
+        std::array<bool, MouseButtons::MouseButtonCount> m_MouseButtonState = { false };
     };
 
     class ThirdPersonCamera : public BaseCamera
@@ -227,7 +228,7 @@ namespace donut::app
             KeyboardControlCount,
         } KeyboardControls;
 
-        const std::unordered_map<int, int> keyboardMap = {
+        const std::unordered_map<int, int> m_KeyboardMap = {
             { GLFW_KEY_LEFT_ALT, KeyboardControls::HorizontalPan },
         };
 
@@ -240,8 +241,8 @@ namespace donut::app
             MouseButtonCount
         } MouseButtons;
 
-        std::array<bool, KeyboardControls::KeyboardControlCount> keyboardState = { false };
-        std::array<bool, MouseButtons::MouseButtonCount> mouseButtonState = { false };
+        std::array<bool, KeyboardControls::KeyboardControlCount> m_KeyboardState = { false };
+        std::array<bool, MouseButtons::MouseButtonCount> m_MouseButtonState = { false };
     };
 
     // The SwitchableCamera class provides a combination of first-person, third-person, and scene graph cameras.

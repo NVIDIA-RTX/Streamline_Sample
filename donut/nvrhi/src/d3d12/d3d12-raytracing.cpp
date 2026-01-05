@@ -186,6 +186,7 @@ namespace
         void SetInstanceDescs(D3D12_GPU_VIRTUAL_ADDRESS instanceDescs, UINT numDescs) {
             m_desc.InstanceDescs = instanceDescs;
             m_desc.NumDescs = numDescs;
+            m_desc.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
         }
 
         D3D12RaytracingGeometryDesc& GetGeometryDesc(uint32_t index) {
@@ -698,7 +699,7 @@ namespace nvrhi::d3d12
         fillAsInputDescForPreBuildInfo(ASInputs, desc);
 
 #if NVRHI_WITH_NVAPI_OPACITY_MICROMAP || NVRHI_WITH_NVAPI_LSS
-        if (m_NvapiIsInitialized)
+        if (m_OpacityMicromapSupported || m_LinearSweptSpheresSupported)
         {
             const NVAPI_D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS_EX inputs = ASInputs.GetAs<NVAPI_D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS_EX>();
 
@@ -895,29 +896,6 @@ namespace nvrhi::d3d12
         return nativeFormat;
     }
 
-    static uint32_t translateMoveOperation(const rt::cluster::OperationParams& params, NVAPI_D3D12_RAYTRACING_MULTI_INDIRECT_CLUSTER_OPERATION_INPUTS& inputs)
-    {
-        inputs.type = NVAPI_D3D12_RAYTRACING_MULTI_INDIRECT_CLUSTER_OPERATION_TYPE_MOVE_CLUSTER_OBJECT;
-        inputs.movesDesc.maxBytesMoved = params.move.maxBytes;
-
-        switch (params.move.type)
-        {
-        case rt::cluster::OperationMoveType::BottomLevel:
-            inputs.movesDesc.type = NVAPI_D3D12_RAYTRACING_MULTI_INDIRECT_CLUSTER_OPERATION_MOVE_TYPE_BOTTOM_LEVEL_ACCELERATION_STRUCTURE;
-            break;
-        case rt::cluster::OperationMoveType::ClusterLevel:
-            inputs.movesDesc.type = NVAPI_D3D12_RAYTRACING_MULTI_INDIRECT_CLUSTER_OPERATION_MOVE_TYPE_CLUSTER_LEVEL_ACCELERATION_STRUCTURE;
-            break;
-        case rt::cluster::OperationMoveType::Template:
-            inputs.movesDesc.type = NVAPI_D3D12_RAYTRACING_MULTI_INDIRECT_CLUSTER_OPERATION_MOVE_TYPE_TEMPLATE;
-            break;
-        default:
-            assert(false);
-        }
-
-        return sizeof(NVAPI_D3D12_RAYTRACING_ACCELERATION_STRUCTURE_MULTI_INDIRECT_MOVE_ARGS);
-    }
-
     static void translateClusterTriangleDesc(const rt::cluster::OperationParams& params, NVAPI_D3D12_RAYTRACING_MULTI_INDIRECT_CLUSTER_OPERATION_INPUT_TRIANGLES_DESC& TriangleDesc)
     {
         TriangleDesc.vertexFormat = translateCLASBuildOperationVertexFormat(params);
@@ -930,40 +908,62 @@ namespace nvrhi::d3d12
         TriangleDesc.minPositionTruncateBitCount = params.clas.minPositionTruncateBitCount;
     }
 
-    static uint32_t translateCLASBuildOperation(const rt::cluster::OperationParams& params, NVAPI_D3D12_RAYTRACING_MULTI_INDIRECT_CLUSTER_OPERATION_INPUTS& inputs)
+    static NVAPI_D3D12_RAYTRACING_MULTI_INDIRECT_CLUSTER_OPERATION_INPUTS translateClusterOperation(const rt::cluster::OperationParams& params)
     {
-        inputs.type = NVAPI_D3D12_RAYTRACING_MULTI_INDIRECT_CLUSTER_OPERATION_TYPE_BUILD_CLAS_FROM_TRIANGLES;
+        NVAPI_D3D12_RAYTRACING_MULTI_INDIRECT_CLUSTER_OPERATION_INPUTS inputs = {};
+        inputs.maxArgCount = params.maxArgCount;
+        inputs.mode = translateClusterOperationMode(params.mode);
+        inputs.flags = translateClusterOperationFlags(params.flags);
 
-        translateClusterTriangleDesc(params, inputs.trianglesDesc);
+        switch (params.type)
+        {
+        case rt::cluster::OperationType::Move:
+            inputs.type = NVAPI_D3D12_RAYTRACING_MULTI_INDIRECT_CLUSTER_OPERATION_TYPE_MOVE_CLUSTER_OBJECT;
+            inputs.movesDesc.maxBytesMoved = params.move.maxBytes;
 
-        return sizeof(NVAPI_D3D12_RAYTRACING_ACCELERATION_STRUCTURE_MULTI_INDIRECT_TRIANGLE_CLUSTER_ARGS);
-    }
+            switch (params.move.type)
+            {
+            case rt::cluster::OperationMoveType::BottomLevel:
+                inputs.movesDesc.type = NVAPI_D3D12_RAYTRACING_MULTI_INDIRECT_CLUSTER_OPERATION_MOVE_TYPE_BOTTOM_LEVEL_ACCELERATION_STRUCTURE;
+                break;
+            case rt::cluster::OperationMoveType::ClusterLevel:
+                inputs.movesDesc.type = NVAPI_D3D12_RAYTRACING_MULTI_INDIRECT_CLUSTER_OPERATION_MOVE_TYPE_CLUSTER_LEVEL_ACCELERATION_STRUCTURE;
+                break;
+            case rt::cluster::OperationMoveType::Template:
+                inputs.movesDesc.type = NVAPI_D3D12_RAYTRACING_MULTI_INDIRECT_CLUSTER_OPERATION_MOVE_TYPE_TEMPLATE;
+                break;
+            default:
+                assert(false);
+            }
+            break;
 
-    static uint32_t translateCLASTemplateBuildOperation(const rt::cluster::OperationParams& params, NVAPI_D3D12_RAYTRACING_MULTI_INDIRECT_CLUSTER_OPERATION_INPUTS& inputs)
-    {
-        inputs.type = NVAPI_D3D12_RAYTRACING_MULTI_INDIRECT_CLUSTER_OPERATION_TYPE_BUILD_CLUSTER_TEMPLATES_FROM_TRIANGLES;
+        case rt::cluster::OperationType::ClasBuild:
+            inputs.type = NVAPI_D3D12_RAYTRACING_MULTI_INDIRECT_CLUSTER_OPERATION_TYPE_BUILD_CLAS_FROM_TRIANGLES;
+            translateClusterTriangleDesc(params, inputs.trianglesDesc);
+            break;
 
-        translateClusterTriangleDesc(params, inputs.trianglesDesc);
+        case rt::cluster::OperationType::ClasBuildTemplates:
+            inputs.type = NVAPI_D3D12_RAYTRACING_MULTI_INDIRECT_CLUSTER_OPERATION_TYPE_BUILD_CLUSTER_TEMPLATES_FROM_TRIANGLES;
+            translateClusterTriangleDesc(params, inputs.trianglesDesc);
+            break;
 
-        return sizeof(NVAPI_D3D12_RAYTRACING_ACCELERATION_STRUCTURE_MULTI_INDIRECT_TRIANGLE_TEMPLATE_ARGS);
-    }
+        case rt::cluster::OperationType::ClasInstantiateTemplates:
+            inputs.type = NVAPI_D3D12_RAYTRACING_MULTI_INDIRECT_CLUSTER_OPERATION_TYPE_INSTANTIATE_CLUSTER_TEMPLATES;
+            translateClusterTriangleDesc(params, inputs.trianglesDesc);
+            break;
 
-    static uint32_t translateCLASTemplateInstantiateOperation(const rt::cluster::OperationParams& params, NVAPI_D3D12_RAYTRACING_MULTI_INDIRECT_CLUSTER_OPERATION_INPUTS& inputs)
-    {
-        inputs.type = NVAPI_D3D12_RAYTRACING_MULTI_INDIRECT_CLUSTER_OPERATION_TYPE_INSTANTIATE_CLUSTER_TEMPLATES;
+        case rt::cluster::OperationType::BlasBuild:
+            inputs.type = NVAPI_D3D12_RAYTRACING_MULTI_INDIRECT_CLUSTER_OPERATION_TYPE_BUILD_BLAS_FROM_CLAS;
+            inputs.clasDesc.maxTotalClasCount = params.blas.maxTotalClasCount;
+            inputs.clasDesc.maxClasCountPerArg = params.blas.maxClasPerBlasCount;
+            break;
 
-        translateClusterTriangleDesc(params, inputs.trianglesDesc);
+        default:
+            assert(false);
+            break;
+        }
 
-        return sizeof(NVAPI_D3D12_RAYTRACING_ACCELERATION_STRUCTURE_MULTI_INDIRECT_INSTANTIATE_TEMPLATE_ARGS);
-    }
-
-    static uint32_t translateBLASBuildOperation(const rt::cluster::OperationParams& params, NVAPI_D3D12_RAYTRACING_MULTI_INDIRECT_CLUSTER_OPERATION_INPUTS& inputs)
-    {
-        inputs.type = NVAPI_D3D12_RAYTRACING_MULTI_INDIRECT_CLUSTER_OPERATION_TYPE_BUILD_BLAS_FROM_CLAS;
-        inputs.clasDesc.maxTotalClasCount = params.blas.maxTotalClasCount;
-        inputs.clasDesc.maxClasCountPerArg = params.blas.maxClasPerBlasCount;
-
-        return sizeof(NVAPI_D3D12_RAYTRACING_ACCELERATION_STRUCTURE_MULTI_INDIRECT_CLUSTER_ARGS);
+        return inputs;
     }
 #endif // #if NVRHI_WITH_NVAPI_CLUSTERS
 
@@ -973,37 +973,7 @@ namespace nvrhi::d3d12
     rt::cluster::OperationSizeInfo Device::getClusterOperationSizeInfo(const rt::cluster::OperationParams& params)
     {
 #if NVRHI_WITH_NVAPI_CLUSTERS
-        NVAPI_D3D12_RAYTRACING_MULTI_INDIRECT_CLUSTER_OPERATION_INPUTS inputs = {};
-        inputs.maxArgCount = params.maxArgCount;
-        inputs.mode = translateClusterOperationMode(params.mode);
-        inputs.flags = translateClusterOperationFlags(params.flags);
-
-        switch (params.type)
-        {
-        case rt::cluster::OperationType::Move:
-            translateMoveOperation(params, inputs);
-            break;
-
-        case rt::cluster::OperationType::ClasBuild:
-            translateCLASBuildOperation(params, inputs);
-            break;
-
-        case rt::cluster::OperationType::ClasBuildTemplates:
-            translateCLASTemplateBuildOperation(params, inputs);
-            break;
-
-        case rt::cluster::OperationType::ClasInstantiateTemplates:
-            translateCLASTemplateInstantiateOperation(params, inputs);
-            break;
-
-        case rt::cluster::OperationType::BlasBuild:
-            translateBLASBuildOperation(params, inputs);
-            break;
-
-        default:
-            assert(false);
-            break;
-        }
+        NVAPI_D3D12_RAYTRACING_MULTI_INDIRECT_CLUSTER_OPERATION_INPUTS inputs = translateClusterOperation(params);
 
         NVAPI_D3D12_RAYTRACING_MULTI_INDIRECT_CLUSTER_OPERATION_REQUIREMENTS_INFO info = {};
 
@@ -1819,7 +1789,8 @@ namespace nvrhi::d3d12
         commitBarriers();
 
 #if NVRHI_WITH_NVAPI_OPACITY_MICROMAP || NVRHI_WITH_NVAPI_LSS
-        if (checked_cast<d3d12::Device*>(m_Device)->GetNvapiIsInitialized())
+        d3d12::Device* d3d12Device = checked_cast<d3d12::Device*>(m_Device);
+        if (d3d12Device->GetOpacityMicromapSupported() || d3d12Device->GetLinearSweptSpheresSupported())
         {
             NVAPI_D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC_EX buildDesc = {};
             buildDesc.inputs = inputs.GetAs<NVAPI_D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS_EX>();
@@ -2049,39 +2020,7 @@ namespace nvrhi::d3d12
             assert(desc.outSizesBuffer != nullptr); // executeMultiIndirectClusterOperation requires a valid sizes output buffer when in GetSizes mode
         }
 
-        uint32_t indirectArgsStride = 0;
-
-        NVAPI_D3D12_RAYTRACING_MULTI_INDIRECT_CLUSTER_OPERATION_INPUTS inputs = {};
-        inputs.maxArgCount = desc.params.maxArgCount;
-        inputs.mode = translateClusterOperationMode(desc.params.mode);
-        inputs.flags = translateClusterOperationFlags(desc.params.flags);
-
-        switch (desc.params.type)
-        {
-        case rt::cluster::OperationType::Move:
-            indirectArgsStride = translateMoveOperation(desc.params, inputs);
-            break;
-
-        case rt::cluster::OperationType::ClasBuild:
-            indirectArgsStride = translateCLASBuildOperation(desc.params, inputs);
-            break;
-
-        case rt::cluster::OperationType::ClasBuildTemplates:
-            indirectArgsStride = translateCLASTemplateBuildOperation(desc.params, inputs);
-            break;
-
-        case rt::cluster::OperationType::ClasInstantiateTemplates:
-            indirectArgsStride = translateCLASTemplateInstantiateOperation(desc.params, inputs);
-            break;
-
-        case rt::cluster::OperationType::BlasBuild:
-            indirectArgsStride = translateBLASBuildOperation(desc.params, inputs);
-            break;
-
-        default:
-            assert(false);
-            break;
-        }
+        NVAPI_D3D12_RAYTRACING_MULTI_INDIRECT_CLUSTER_OPERATION_INPUTS inputs = translateClusterOperation(desc.params);
         
         // Inputs
         Buffer* inIndirectArgCountBuffer = checked_cast<Buffer*>(desc.inIndirectArgCountBuffer);
@@ -2139,7 +2078,7 @@ namespace nvrhi::d3d12
             d3d12Desc.indirectArgCount = inIndirectArgCountBuffer->gpuVA + desc.inIndirectArgCountOffsetInBytes;
         }
         d3d12Desc.indirectArgArray.StartAddress = inIndirectArgsBuffer->gpuVA + desc.inIndirectArgsOffsetInBytes;
-        d3d12Desc.indirectArgArray.StrideInBytes = indirectArgsStride;
+        d3d12Desc.indirectArgArray.StrideInBytes = inIndirectArgsBuffer->getDesc().structStride;
         d3d12Desc.batchScratchData = scratchGpuVA;
 
         // Input / Output Buffers

@@ -33,31 +33,17 @@ file(GLOB donut_app_vr_src
 
 add_library(donut_app STATIC EXCLUDE_FROM_ALL ${donut_app_src})
 target_include_directories(donut_app PUBLIC include)
-target_link_libraries(donut_app donut_core donut_engine glfw imgui)
 
-if(DONUT_WITH_DX11)
-target_sources(donut_app PRIVATE src/app/dx11/DeviceManager_DX11.cpp)
-target_link_libraries(donut_app nvrhi_d3d11 d3d12 dxgi)
-endif()
-
-if(DONUT_WITH_DX12)
-target_sources(donut_app PRIVATE src/app/dx12/DeviceManager_DX12.cpp)
-target_link_libraries(donut_app nvrhi_d3d12 d3d11 dxgi)
-endif()
-
-if(DONUT_WITH_VULKAN)
-target_sources(donut_app PRIVATE src/app/vulkan/DeviceManager_VK.cpp)
-target_link_libraries(donut_app nvrhi_vk Vulkan-Headers)
-endif()
-
-if(DONUT_WITH_AFTERMATH)
-target_sources(donut_app PRIVATE src/app/aftermath/AftermathCrashDump.cpp)
-endif()
-
+#link streamline since we need to link before d3d11, d3d12, dxgi functions
 if(DONUT_WITH_STREAMLINE)
 target_sources(donut_app PRIVATE src/app/streamline/StreamlineIntegration.cpp)
 target_include_directories(donut_app PRIVATE src/app/streamline/)
 target_link_libraries(donut_app streamline)
+
+if(DONUT_WITH_VULKAN)
+# Override vulkan dll used by glfw
+target_compile_definitions(glfw PRIVATE _GLFW_VULKAN_LIBRARY="sl.interposer.dll")
+endif()
 
 # The STREAMLINE_FEATURE_... options come from the Streamline CMakeLists.txt
 if (STREAMLINE_FEATURE_DEEPDVC)
@@ -89,6 +75,36 @@ if(STREAMLINE_FEATURE_REFLEX)
 endif()
 
 endif() #DONUT_WITH_STREAMLINE
+
+target_link_libraries(donut_app donut_core donut_engine glfw imgui)
+
+if(DONUT_WITH_DX11)
+    target_sources(donut_app PRIVATE src/app/dx11/DeviceManager_DX11.cpp)
+    if (NOT NVRHI_BUILD_SHARED)
+        target_link_libraries(donut_app nvrhi_d3d11)
+    endif()
+    target_link_libraries(donut_app d3d11 dxgi dxguid)
+endif()
+
+if(DONUT_WITH_DX12)
+    target_sources(donut_app PRIVATE src/app/dx12/DeviceManager_DX12.cpp)
+    if (NOT NVRHI_BUILD_SHARED)
+        target_link_libraries(donut_app nvrhi_d3d12)
+    endif()
+    target_link_libraries(donut_app d3d12 dxgi dxguid)
+endif()
+
+if(DONUT_WITH_VULKAN)
+    target_sources(donut_app PRIVATE src/app/vulkan/DeviceManager_VK.cpp)
+    if (NOT NVRHI_BUILD_SHARED)
+        target_link_libraries(donut_app nvrhi_vk)
+    endif()
+    target_link_libraries(donut_app Vulkan-Headers)
+endif()
+
+if(DONUT_WITH_AFTERMATH)
+    target_sources(donut_app PRIVATE src/app/aftermath/AftermathCrashDump.cpp)
+endif()
 
 target_compile_definitions(donut_app PUBLIC DONUT_WITH_AFTERMATH=$<BOOL:${DONUT_WITH_AFTERMATH}>)
 target_compile_definitions(donut_app PUBLIC DONUT_WITH_STREAMLINE=$<BOOL:${DONUT_WITH_STREAMLINE}>)

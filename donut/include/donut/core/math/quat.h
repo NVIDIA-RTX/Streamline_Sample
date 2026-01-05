@@ -139,7 +139,7 @@ namespace donut::math
 #define DEFINE_BINARY_OPERATORS(op) \
 			/* Quat-quat op */ \
 			template<typename T> \
-			quat operator op (const quaternion<T>& a, const quaternion<T>& b) \
+			quaternion<T> operator op (const quaternion<T>& a, const quaternion<T>& b) \
 			{ \
 				return quaternion<T>(a.w op b.w, a.x op b.x, a.y op b.y, a.z op b.z); \
 			} \

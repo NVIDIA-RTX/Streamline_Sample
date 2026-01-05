@@ -338,7 +338,7 @@ namespace nvrhi::vulkan
 
         m_Context.nameVKObject(texture->image, vk::ObjectType::eImage, vk::DebugReportObjectTypeEXT::eImage, desc.debugName.c_str());
 
-        if (!desc.isVirtual)
+        if (!desc.isVirtual && !desc.isTiled)
         {
             res = m_Allocator.allocateTextureMemory(texture);
             ASSERT_VK_OK(res);
@@ -667,6 +667,30 @@ namespace nvrhi::vulkan
             .setInt32({ clearColorInt, clearColorInt, clearColorInt, clearColorInt });
 
         clearTexture(texture, subresources, clearValue);
+    }
+
+    void CommandList::clearSamplerFeedbackTexture(ISamplerFeedbackTexture* texture)
+    {
+        (void)texture;
+
+        utils::NotSupported();
+    }
+
+    void CommandList::decodeSamplerFeedbackTexture(IBuffer* buffer, ISamplerFeedbackTexture* texture, nvrhi::Format format)
+    {
+        (void)buffer;
+        (void)texture;
+        (void)format;
+
+        utils::NotSupported();
+    }
+
+    void CommandList::setSamplerFeedbackTextureState(ISamplerFeedbackTexture* texture, ResourceStates stateBits)
+    {
+        (void)texture;
+        (void)stateBits;
+
+        utils::NotSupported();
     }
 
     Object Texture::getNativeObject(ObjectType objectType)

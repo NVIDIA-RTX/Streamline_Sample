@@ -129,13 +129,13 @@ nvrhi::ShaderHandle ForwardShadingPass::CreateGeometryShader(ShaderFactory& shad
 {
     if (params.singlePassCubemap)
     {
-        nvrhi::ShaderDesc desc(nvrhi::ShaderType::Geometry);
-        desc.fastGSFlags = nvrhi::FastGeometryShaderFlags(
-            nvrhi::FastGeometryShaderFlags::ForceFastGS |
-            nvrhi::FastGeometryShaderFlags::UseViewportMask |
-            nvrhi::FastGeometryShaderFlags::OffsetTargetIndexByViewportIndex);
-
-        desc.pCoordinateSwizzling = CubemapView::GetCubemapCoordinateSwizzle();
+        auto desc = nvrhi::ShaderDesc()
+            .setShaderType(nvrhi::ShaderType::Geometry)
+            .setFastGSFlags(nvrhi::FastGeometryShaderFlags(
+                nvrhi::FastGeometryShaderFlags::ForceFastGS |
+                nvrhi::FastGeometryShaderFlags::UseViewportMask |
+                nvrhi::FastGeometryShaderFlags::OffsetTargetIndexByViewportIndex))
+            .setCoordinateSwizzling(CubemapView::GetCubemapCoordinateSwizzle());
 
         return shaderFactory.CreateAutoShader("donut/passes/cubemap_gs.hlsl", "main", DONUT_MAKE_PLATFORM_SHADER(g_cubemap_gs), nullptr, desc);
     }

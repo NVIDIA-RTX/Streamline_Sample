@@ -103,6 +103,9 @@ namespace nvrhi::d3d12
         case PrimitiveType::PatchList:
             desc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_PATCH;
             break;
+        default:
+            m_Context.error("PrimitiveType unsupported by this device");
+            return nullptr;
         }
 
         desc.DSVFormat = getDxgiFormatMapping(fbinfo.depthFormat).rtvFormat;
@@ -413,7 +416,7 @@ namespace nvrhi::d3d12
 
         if (updateShadingRate || updateFramebuffer)
         {
-            auto framebufferDesc = framebuffer->getDesc();
+            const auto& framebufferDesc = framebuffer->getDesc();
             bool shouldEnableVariableRateShading = framebufferDesc.shadingRateAttachment.valid() && state.shadingRateState.enabled;
             bool variableRateShadingCurrentlyEnabled = m_CurrentGraphicsStateValid
                 && m_CurrentGraphicsState.framebuffer->getDesc().shadingRateAttachment.valid() && m_CurrentGraphicsState.shadingRateState.enabled;

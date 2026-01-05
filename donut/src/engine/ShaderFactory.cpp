@@ -23,6 +23,7 @@
 #include <donut/engine/ShaderFactory.h>
 #include <donut/core/vfs/VFS.h>
 #include <donut/core/log.h>
+#include <donut/core/string_utils.h>
 #include <ShaderMake/ShaderBlob.h>
 #if DONUT_WITH_AFTERMATH
 #include <donut/app/AftermathCrashDump.h>
@@ -109,6 +110,11 @@ nvrhi::ShaderHandle ShaderFactory::CreateShader(const char* fileName, const char
     return CreateStaticShader(StaticShader{ byteCode->data(), byteCode->size() }, pDefines, descCopy);
 }
 
+nvrhi::ShaderHandle ShaderFactory::CreateShader(const char* fileName, const char* entryName, const vector<ShaderMacro>* pDefines, nvrhi::ShaderType shaderType)
+{
+    return CreateShader(fileName, entryName, pDefines, nvrhi::ShaderDesc().setShaderType(shaderType));
+}
+
 nvrhi::ShaderLibraryHandle ShaderFactory::CreateShaderLibrary(const char* fileName, const std::vector<ShaderMacro>* pDefines)
 {
     std::shared_ptr<IBlob> byteCode = GetBytecode(fileName, nullptr);
@@ -144,6 +150,11 @@ nvrhi::ShaderHandle ShaderFactory::CreateStaticShader(StaticShader shader, const
     return m_Device->createShader(desc, permutationBytecode, permutationSize);
 }
 
+nvrhi::ShaderHandle ShaderFactory::CreateStaticShader(StaticShader shader, const std::vector<ShaderMacro>* pDefines, nvrhi::ShaderType shaderType)
+{
+    return CreateStaticShader(shader, pDefines, nvrhi::ShaderDesc().setShaderType(shaderType));
+}
+
 nvrhi::ShaderHandle ShaderFactory::CreateStaticPlatformShader(StaticShader dxbc, StaticShader dxil, StaticShader spirv, const std::vector<ShaderMacro>* pDefines, const nvrhi::ShaderDesc& desc)
 {
     StaticShader shader;
@@ -161,6 +172,11 @@ nvrhi::ShaderHandle ShaderFactory::CreateStaticPlatformShader(StaticShader dxbc,
     }
 
     return CreateStaticShader(shader, pDefines, desc);
+}
+
+nvrhi::ShaderHandle ShaderFactory::CreateStaticPlatformShader(StaticShader dxbc, StaticShader dxil, StaticShader spirv, const std::vector<ShaderMacro>* pDefines, nvrhi::ShaderType shaderType)
+{
+    return CreateStaticPlatformShader(dxbc, dxil, spirv, pDefines, nvrhi::ShaderDesc().setShaderType(shaderType));
 }
 
 nvrhi::ShaderLibraryHandle ShaderFactory::CreateStaticShaderLibrary(StaticShader shader, const std::vector<ShaderMacro>* pDefines)
@@ -220,6 +236,11 @@ nvrhi::ShaderHandle ShaderFactory::CreateAutoShader(const char* fileName, const 
     return CreateShader(fileName, entryName, pDefines, desc);
 }
 
+nvrhi::ShaderHandle ShaderFactory::CreateAutoShader(const char* fileName, const char* entryName, StaticShader dxbc, StaticShader dxil, StaticShader spirv, const std::vector<ShaderMacro>* pDefines, nvrhi::ShaderType shaderType)
+{
+    return CreateAutoShader(fileName, entryName, dxbc, dxil, spirv, pDefines, nvrhi::ShaderDesc().setShaderType(shaderType));
+}
+
 nvrhi::ShaderLibraryHandle ShaderFactory::CreateAutoShaderLibrary(const char* fileName, StaticShader dxil, StaticShader spirv, const std::vector<ShaderMacro>* pDefines)
 {
     nvrhi::ShaderLibraryHandle shader = CreateStaticPlatformShaderLibrary(dxil, spirv, pDefines);
@@ -235,10 +256,51 @@ std::pair<const void*, size_t> donut::engine::ShaderFactory::FindShaderFromHash(
     {
         const void* shaderBytes = entry.second->data();
         size_t shaderSize = entry.second->size();
-        uint64_t entryHash = hashGenerator(std::make_pair(shaderBytes, shaderSize), m_Device->getGraphicsAPI());
-        if (entryHash == hash)
+
+        // the bytecode could contain multiple permutations
+        std::vector<std::string> permutations;
+        ShaderMake::EnumeratePermutationsInBlob(shaderBytes, shaderSize, permutations);
+
+        if (permutations.size() > 1)
         {
-            return std::make_pair(shaderBytes, shaderSize);
+            std::vector<ShaderMake::ShaderConstant> permutationConstants;
+            std::unordered_map<std::string, std::string> permutationDefines;
+            for (auto permutation : permutations)
+            {
+                permutationConstants.clear();
+                permutationDefines.clear();
+                // split the string by spaces to get individual defines
+                std::vector<std::string> permutationStrings = donut::string_utils::split(permutation, " ");
+                for (auto& s : permutationStrings)
+                {
+                    std::vector<std::string> keyValue = donut::string_utils::split(s, "=");
+                    permutationDefines[keyValue[0]] = keyValue[1];
+                }
+                // now that we have processed all defines in this permutation, can create the shader constants
+                for (const auto& [key, value] : permutationDefines)
+                {
+                    permutationConstants.push_back(ShaderMake::ShaderConstant{ key.c_str(), value.c_str() });
+                }
+                const void* permutationBytecode = nullptr;
+                size_t permutationSize = 0;
+                if (ShaderMake::FindPermutationInBlob(shaderBytes, shaderSize, permutationConstants.data(),
+                    uint32_t(permutationConstants.size()), &permutationBytecode, &permutationSize))
+                {
+                    uint64_t entryHash = hashGenerator(std::make_pair(permutationBytecode, permutationSize), m_Device->getGraphicsAPI());
+                    if (entryHash == hash)
+                    {
+                        return std::make_pair(permutationBytecode, permutationSize);
+                    }
+                }
+            }
+        }
+        else
+        {
+            uint64_t entryHash = hashGenerator(std::make_pair(shaderBytes, shaderSize), m_Device->getGraphicsAPI());
+            if (entryHash == hash)
+            {
+                return std::make_pair(shaderBytes, shaderSize);
+            }
         }
     }
     return std::make_pair(nullptr, 0);

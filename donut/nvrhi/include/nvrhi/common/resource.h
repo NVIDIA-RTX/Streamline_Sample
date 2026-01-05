@@ -20,6 +20,8 @@
 * DEALINGS IN THE SOFTWARE.
 */
 
+#pragma once 
+
 #include <atomic>
 #include <cstdint>
 #include <type_traits>

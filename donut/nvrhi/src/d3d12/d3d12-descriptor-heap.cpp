@@ -87,9 +87,23 @@ namespace nvrhi::d3d12
         uint32_t oldSize = m_NumDescriptors;
         uint32_t newSize = nextPowerOf2(minRequiredSize);
 
+        bool const isShaderVisible = m_ShaderVisibleHeap != nullptr;
+
+        if (isShaderVisible)
+        {
+            uint32_t const maxSize = (m_HeapType == D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV)
+                ? D3D12_MAX_SHADER_VISIBLE_DESCRIPTOR_HEAP_SIZE_TIER_1 // Not a power of 2!
+                : D3D12_MAX_SHADER_VISIBLE_SAMPLER_HEAP_SIZE;
+
+            newSize = std::min(newSize, maxSize);
+
+            if (newSize < minRequiredSize)
+                return E_OUTOFMEMORY;
+        }
+
         RefCountPtr<ID3D12DescriptorHeap> oldHeap = m_Heap; 
 
-        HRESULT hr = allocateResources(m_HeapType, newSize, m_ShaderVisibleHeap != nullptr);
+        HRESULT hr = allocateResources(m_HeapType, newSize, isShaderVisible);
         
         if (FAILED(hr))
             return hr;

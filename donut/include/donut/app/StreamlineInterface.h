@@ -197,6 +197,34 @@ public:
         uint16_t virtualKey = 0;
         uint32_t idThread = 0;
     };
+    struct ReflexReport
+    {
+        uint64_t frameID{};
+        uint64_t inputSampleTime{};
+        uint64_t simStartTime{};
+        uint64_t simEndTime{};
+        uint64_t renderSubmitStartTime{};
+        uint64_t renderSubmitEndTime{};
+        uint64_t presentStartTime{};
+        uint64_t presentEndTime{};
+        uint64_t driverStartTime{};
+        uint64_t driverEndTime{};
+        uint64_t osRenderQueueStartTime{};
+        uint64_t osRenderQueueEndTime{};
+        uint64_t gpuRenderStartTime{};
+        uint64_t gpuRenderEndTime{};
+        uint32_t gpuActiveRenderTimeUs{};
+        uint32_t gpuFrameTimeUs{};
+    };
+    struct ReflexState
+    {
+        bool lowLatencyAvailable = false;
+        bool latencyReportAvailable = false;
+        uint32_t statsWindowMessage;
+        ReflexReport frameReport[64];
+        bool flashIndicatorDriverControlled = false;
+    };
+    virtual void GetReflexState(ReflexState& state) const = 0;
     virtual bool IsReflexAvailable() const = 0;
     virtual bool IsPCLAvailable() const = 0;
     virtual void SetReflexConsts(const ReflexOptions& options) = 0;
@@ -246,6 +274,27 @@ public:
         bool useReflexMatrices = false;
         DLSSGQueueParallelismMode queueParallelismMode{};
     };
+    enum class DLSSGStatus : uint32_t
+    {
+        eOk = 0,
+        eFailResolutionTooLow = 1 << 0,
+        eFailReflexNotDetectedAtRuntime = 1 << 1,
+        eFailHDRFormatNotSupported = 1 << 2,
+        eFailCommonConstantsInvalid = 1 << 3,
+        eFailGetCurrentBackBufferIndexNotCalled = 1 << 4
+    };
+    struct DLSSGState
+    {
+        uint64_t estimatedVRAMUsageInBytes{};
+        DLSSGStatus status{};
+        uint32_t minWidthOrHeight{};
+        uint32_t numFramesActuallyPresented{};
+        uint32_t numFramesToGenerateMax{};
+        bool bIsVsyncSupportAvailable{};
+        void* inputsProcessingCompletionFence{};
+        uint64_t lastPresentInputsProcessingCompletionFenceValue{};
+    };
+    virtual void GetDLSSGState(DLSSGState& state, const DLSSGOptions& options) = 0;
     virtual void SetDLSSGOptions(const DLSSGOptions& options) = 0;
     virtual bool IsDLSSGAvailable() const = 0;
     virtual void CleanupDLSSG(bool wfi) = 0;
@@ -259,6 +308,7 @@ public:
         ePresetC,
         ePresetD,
         ePresetE,
+        ePresetF,
         ePresetG,
     };
     enum class DLSSRRNormalRoughnessMode : uint32_t
@@ -321,6 +371,11 @@ public:
 
     virtual void UnTagResourcesDeepDVC() = 0;
 
+	// * If roughness != nullptr, normalsAndOptionalRoughness contains only normals. If roughness == nullptr then the 
+	//   roughness value should be in .a channel of the normalsAndOptionalRoughness and normalRoughnessMode in 
+	//   StreamlineInterface::DLSSRROptions must be set to DLSSRRNormalRoughnessMode::ePacked.
+	// * Either specHitDist or specMotionVectors should be provided but not both nor neither. Refer to DLSS-RR 
+	//   documentation for more detail.
     virtual void TagResourcesDLSSRR(
         nvrhi::ICommandList* commandList,
         const donut::engine::IView* view,
@@ -329,9 +384,10 @@ public:
         nvrhi::ITexture* inputColor,
         nvrhi::ITexture* diffuseAlbedo,
         nvrhi::ITexture* specAlbedo,
-        nvrhi::ITexture* normals,
+        nvrhi::ITexture* normalsAndOptionalRoughness,
         nvrhi::ITexture* roughness,
         nvrhi::ITexture* specHitDist,
+        nvrhi::ITexture* specMotionVectors,
         nvrhi::ITexture* outputColor
     ) = 0;
 

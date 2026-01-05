@@ -103,7 +103,7 @@ struct Vertex {
 };
 
 nvrhi::ShaderHandle vertexShader = nvrhiDevice->createShader(
-    nvrhi::ShaderDesc(nvrhi::ShaderType::Vertex),
+    nvrhi::ShaderDesc().setShaderType(nvrhi::ShaderType::Vertex),
     g_VertexShader, sizeof(g_VertexShader));
 
 nvrhi::VertexAttributeDesc attributes[] = {
@@ -119,11 +119,11 @@ nvrhi::VertexAttributeDesc attributes[] = {
         .setElementStride(sizeof(Vertex)),
 };
 
-nvrhi::InputLayoutHandle = inputLayout = nvrhiDevice->createInputLayout(
+nvrhi::InputLayoutHandle inputLayout = nvrhiDevice->createInputLayout(
     attributes, uint32_t(std::size(attributes)), vertexShader);
 
 nvrhi::ShaderHandle pixelShader = nvrhiDevice->createShader(
-    nvrhi::ShaderDesc(nvrhi::ShaderType::Pixel),
+    nvrhi::ShaderDesc().setShaderType(nvrhi::ShaderType::Pixel),
     g_PixelShader, sizeof(g_PixelShader));
 ```
 
@@ -226,8 +226,9 @@ nvrhi::CommandListHandle commandList = nvrhiDevice->createCommandList();
 Finally, we'll need a binding set to map our resources to the pipeline at draw time. Binding sets are basically mirror images of the binding layout but they reference actual resources to be bound.
 
 ```c++
-// Note: the order of the items must match that of the binding layout.
-// If it doesn't, the validation layer will issue an error message.
+// Note: the binding set must include all bindings declared in the layout, and nothing else.
+// This condition is tested by the validation layer.
+// The order of items in the binding set doesn't matter.
 auto bindingSetDesc = nvrhi::BindingSetDesc()
     .addItem(nvrhi::BindingSetItem::Texture_SRV(0, geometryTexture))
     .addItem(nvrhi::BindingSetItem::ConstantBuffer(0, constantBuffer));

@@ -135,7 +135,7 @@ namespace nvrhi::d3d12
             heapProps.Type = D3D12_HEAP_TYPE_CUSTOM;
             heapProps.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_WRITE_BACK;
             heapProps.MemoryPoolPreference = D3D12_MEMORY_POOL_L0;
-            initialState = D3D12_RESOURCE_STATE_RESOLVE_DEST;
+            initialState = D3D12_RESOURCE_STATE_COMMON;
         }
 
         HRESULT res = m_Context.device->CreateCommittedResource(

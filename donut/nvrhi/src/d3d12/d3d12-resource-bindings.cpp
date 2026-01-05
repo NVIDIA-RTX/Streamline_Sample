@@ -111,7 +111,7 @@ namespace nvrhi::d3d12
 
                     for (const auto& binding : desc.bindings)
                     {
-                        if (binding.type == ResourceType::Sampler && binding.slot == slot)
+                        if (binding.type == ResourceType::Sampler && binding.slot + binding.arrayElement == slot)
                         {
                             Sampler* sampler = checked_cast<Sampler*>(binding.resourceHandle);
                             resources.push_back(sampler);
@@ -156,7 +156,7 @@ namespace nvrhi::d3d12
                     {
                         const BindingSetItem& binding = desc.bindings[bindingIndex];
 
-                        if (binding.slot != slot)
+                        if (binding.slot + binding.arrayElement != slot)
                             continue;
 
                         const auto bindingType = GetNormalizedResourceType(binding.type);
@@ -288,6 +288,10 @@ namespace nvrhi::d3d12
                         else if (range.RangeType == D3D12_DESCRIPTOR_RANGE_TYPE_UAV && bindingType == ResourceType::SamplerFeedbackTexture_UAV)
                         {
                             SamplerFeedbackTexture* texture = checked_cast<SamplerFeedbackTexture*>(binding.resourceHandle);
+
+                            // No texture - fallback to a NULL descriptor created below when 'found == false'
+                            if (!texture)
+                                break;
 
                             texture->createUAV(descriptorHandle.ptr);
                             pResource = texture;
@@ -426,13 +430,13 @@ namespace nvrhi::d3d12
                     D3D12_DESCRIPTOR_RANGE1& range = descriptorRangesSamplers[descriptorRangesSamplers.size() - 1];
 
                     range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER;
-                    range.NumDescriptors = 1;
+                    range.NumDescriptors = binding.size;
                     range.BaseShaderRegister = binding.slot;
                     range.RegisterSpace = desc.registerSpace;
                     range.OffsetInDescriptorsFromTableStart = descriptorTableSizeSamplers;
                     range.Flags = D3D12_DESCRIPTOR_RANGE_FLAG_NONE;
 
-                    descriptorTableSizeSamplers += 1;
+                    descriptorTableSizeSamplers += binding.size;
                 }
                 else
                 {
@@ -470,7 +474,7 @@ namespace nvrhi::d3d12
                         utils::InvalidEnum();
                         continue;
                     }
-                    range.NumDescriptors = 1;
+                    range.NumDescriptors = binding.size;
                     range.BaseShaderRegister = binding.slot;
                     range.RegisterSpace = desc.registerSpace;
                     range.OffsetInDescriptorsFromTableStart = descriptorTableSizeSRVetc;
@@ -479,7 +483,7 @@ namespace nvrhi::d3d12
                     // a buffer to the command list and then copy data into it.
                     range.Flags = D3D12_DESCRIPTOR_RANGE_FLAG_DATA_VOLATILE;
 
-                    descriptorTableSizeSRVetc += 1;
+                    descriptorTableSizeSRVetc += binding.size;
 
                     bindingLayoutsSRVetc.push_back(binding);
                 }
@@ -496,16 +500,16 @@ namespace nvrhi::d3d12
                     assert(!descriptorRangesSamplers.empty());
                     D3D12_DESCRIPTOR_RANGE1& range = descriptorRangesSamplers[descriptorRangesSamplers.size() - 1];
 
-                    range.NumDescriptors += 1;
-                    descriptorTableSizeSamplers += 1;
+                    range.NumDescriptors += binding.size;
+                    descriptorTableSizeSamplers += binding.size;
                 }
                 else
                 {
                     assert(!descriptorRangesSRVetc.empty());
                     D3D12_DESCRIPTOR_RANGE1& range = descriptorRangesSRVetc[descriptorRangesSRVetc.size() - 1];
 
-                    range.NumDescriptors += 1;
-                    descriptorTableSizeSRVetc += 1;
+                    range.NumDescriptors += binding.size;
+                    descriptorTableSizeSRVetc += binding.size;
 
                     bindingLayoutsSRVetc.push_back(binding);
                 }
@@ -623,10 +627,13 @@ namespace nvrhi::d3d12
             descriptorRange.OffsetInDescriptorsFromTableStart = 0;
         }
 
-        rootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-        rootParameter.ShaderVisibility = convertShaderStage(desc.visibility);
-        rootParameter.DescriptorTable.NumDescriptorRanges = uint32_t(descriptorRanges.size());
-        rootParameter.DescriptorTable.pDescriptorRanges = &descriptorRanges[0];
+        if (desc.layoutType == BindlessLayoutDesc::LayoutType::Immutable)
+        {
+            rootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+            rootParameter.ShaderVisibility = convertShaderStage(desc.visibility);
+            rootParameter.DescriptorTable.NumDescriptorRanges = uint32_t(descriptorRanges.size());
+            rootParameter.DescriptorTable.pDescriptorRanges = &descriptorRanges[0];
+        }
     }
 
     RootSignatureHandle Device::buildRootSignature(const static_vector<BindingLayoutHandle, c_MaxBindingLayouts>& pipelineLayouts, bool allowInputLayout, bool isLocal, const D3D12_ROOT_PARAMETER1* pCustomParameters, uint32_t numCustomParameters)
@@ -645,6 +652,9 @@ namespace nvrhi::d3d12
         {
             rootParameters.push_back(pCustomParameters[index]);
         }
+
+        bool usesResourceDescriptorHeap = false;
+        bool usesSamplerDescriptorHeap = false;
 
         for(uint32_t layoutIndex = 0; layoutIndex < uint32_t(pipelineLayouts.size()); layoutIndex++)
         {
@@ -666,11 +676,28 @@ namespace nvrhi::d3d12
             else if (pipelineLayouts[layoutIndex]->getBindlessDesc())
             {
                 BindlessLayout* layout = checked_cast<BindlessLayout*>(pipelineLayouts[layoutIndex].Get());
-                RootParameterIndex rootParameterOffset = RootParameterIndex(rootParameters.size());
 
-                rootsig->pipelineLayouts.push_back(std::make_pair(layout, rootParameterOffset));
-
-                rootParameters.push_back(layout->rootParameter);
+                auto layoutType = layout->getBindlessDesc()->layoutType;
+                if (layoutType != BindlessLayoutDesc::LayoutType::Immutable)
+                {
+                    // For mutable layout types we enable the descriptor heap flags and use an invalid root parameter
+                    // There is no valid root parameter.
+                    rootsig->pipelineLayouts.push_back(std::make_pair(layout, c_InvalidRootParameterIndex));
+                    if (layoutType == BindlessLayoutDesc::LayoutType::MutableSampler)
+                    {
+                        usesSamplerDescriptorHeap = true;
+                    }
+                    else
+                    {
+                        usesResourceDescriptorHeap = true;
+                    }
+                }
+                else
+                {
+                    RootParameterIndex rootParameterOffset = RootParameterIndex(rootParameters.size());
+                    rootsig->pipelineLayouts.push_back(std::make_pair(layout, rootParameterOffset));
+                    rootParameters.push_back(layout->rootParameter);
+                }
             }
         }
 
@@ -690,8 +717,14 @@ namespace nvrhi::d3d12
 
         if (m_HeapDirectlyIndexedEnabled)
         {
-            rsDesc.Desc_1_1.Flags |= D3D12_ROOT_SIGNATURE_FLAG_SAMPLER_HEAP_DIRECTLY_INDEXED;
-            rsDesc.Desc_1_1.Flags |= D3D12_ROOT_SIGNATURE_FLAG_CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED;
+            if (usesSamplerDescriptorHeap)
+            {
+                rsDesc.Desc_1_1.Flags |= D3D12_ROOT_SIGNATURE_FLAG_SAMPLER_HEAP_DIRECTLY_INDEXED;
+            }
+            if (usesResourceDescriptorHeap)
+            {
+                rsDesc.Desc_1_1.Flags |= D3D12_ROOT_SIGNATURE_FLAG_CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED;
+            }
         }
         
         if (!rootParameters.empty())
@@ -975,7 +1008,7 @@ namespace nvrhi::d3d12
                         setResourceStatesForBindingSet(bindingSet);
                     }
                 }
-                else
+                else if (rootParameterOffset != c_InvalidRootParameterIndex)
                 {
                     DescriptorTable* descriptorTable = checked_cast<DescriptorTable*>(_bindingSet);
 
@@ -1101,7 +1134,7 @@ namespace nvrhi::d3d12
                         setResourceStatesForBindingSet(bindingSet);
                     }
                 }
-                else if (updateThisSet)
+                else if (rootParameterOffset != c_InvalidRootParameterIndex)
                 {
                     DescriptorTable* descriptorTable = checked_cast<DescriptorTable*>(_bindingSet);
 

@@ -23,6 +23,7 @@
 #pragma pack_matrix(row_major)
 
 #include <donut/shaders/taa_cb.h>
+#include <donut/shaders/binding_helpers.hlsli>
 
 cbuffer c_TemporalAA : register(b0)
 {
@@ -42,8 +43,8 @@ Texture2DMS<float2> t_MotionVectors : register(t1);
 #endif
 Texture2D<float4> t_FeedbackInput : register(t2);
 SamplerState s_Sampler : register(s0);
-RWTexture2D<float4> u_ColorOutput : register(u0);
-RWTexture2D<float4> u_FeedbackOutput : register(u1);
+VK_IMAGE_FORMAT("rgba16f") RWTexture2D<float4> u_ColorOutput : register(u0);
+VK_IMAGE_FORMAT("rgba16f") RWTexture2D<float4> u_FeedbackOutput : register(u1);
 
 Texture2D<float> t_HistoryClampRelaxMask : register(t3);
 

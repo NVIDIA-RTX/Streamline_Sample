@@ -2,19 +2,27 @@
 
 [![Build Status](https://github.com/NVIDIA-RTX/ShaderMake/actions/workflows/build.yml/badge.svg)](https://github.com/NVIDIA-RTX/ShaderMake/actions/workflows/build.yml)
 
-ShaderMake is a frond-end tool for batch multi-threaded shader compilation developed by NVIDIA DevTech. It is compatible with Microsoft FXC and DXC compilers by calling them via API functions or executing them through command line, and with [Slang](https://github.com/shader-slang/slang) through command line only.
+ShaderMake is a front-end tool for batch multi-threaded shader compilation developed by NVIDIA DevTech. It is compatible with Microsoft *FXC* and *DXC* compilers by calling them via API functions or executing them through command line, and with [Slang](https://github.com/shader-slang/slang) through command line only.
 
 Features:
 
-- Generates DXBC, DXIL and SPIR-V code.
-- Outputs results in 3 formats: native binary, header file, and a [binary blob](#user-content-shader-blob-api) containing all permutations for a given shader.
+- Generates *DXBC*, *DXIL* *SPIRV* and any produced by *Slang*;
+- Output formats: a native binary, a header file, and a binary or header [blob](#user-content-shader-blob) (containing all permutations for a given input shader file);
 - Minimizes the number of re-compilation tasks by tracking file modification times and include trees.
 
-During project deployment, the *CMake* script automatically searches for `fxc` and `dxc` and sets these variables:
+*CMake* options:
 
-- `FXC_PATH` - `fxc` from *Windows SDK*
-- `DXC_PATH` - `dxc` from *Windows SDK*
-- `DXC_SPIRV_PATH` - `dxc` with enabled SPIRV generation from *Vulkan SDK*
+- `SHADERMAKE_FIND_FXC` - find *FXC* in installed [Windows SDK](https://developer.microsoft.com/en-us/windows/downloads/windows-sdk/) and populate `SHADERMAKE_FXC_PATH`
+- `SHADERMAKE_FIND_DXC` -  download [DXC](https://github.com/microsoft/DirectXShaderCompiler) from *GitHub* and populate `SHADERMAKE_DXC_PATH`
+- `SHADERMAKE_FIND_DXC_VK` - find *DXC* in installed [Vulkan SDK](https://www.lunarg.com/vulkan-sdk/) and populate `SHADERMAKE_DXC_VK_PATH` (this is the only way to get *DXC* on *MacOS* currently)
+- `SHADERMAKE_FIND_SLANG` - download [Slang](https://github.com/shader-slang/slang) from *GitHub* and populate `SHADERMAKE_SLANG_PATH`
+- `SHADERMAKE_FIND_COMPILERS` - master switch
+- `SHADERMAKE_DXC_VERSION` - *DXC* to download from *GitHub/DirectXShaderCompiler* releases
+- `SHADERMAKE_DXC_DATE` - *DXC* release date (unfortunately present in the download links)
+- `SHADERMAKE_SLANG_VERSION` - *Slang* to download from *GitHub/Shader-slang/slang* releases
+- `SHADERMAKE_TOOL` - Use ShaderMake as an external tool and hide the executable from the parent project IDE. It's especially handy to avoid shader recompilation on switching build configurations
+
+If one of `SHADERMAKE_DXC_PATH` or `SHADERMAKE_DXC_VK_PATH` left empty during deployment, it will be set to the valid one (both support *DXIL* and *SPIRV* code generation). After deployment `SHADERMAKE_PATH` CMake variable stores the path to the ShaderMake executable.
 
 ## Command line options
 
@@ -29,51 +37,56 @@ ShaderMake.exe -p {DXBC|DXIL|SPIRV} --binary [--header --blob] -c "path/to/confi
 ```
 
 Required options:
-- `-p, --platform=<str>` - DXBC, DXIL or SPIRV
-- `-c, --config=<str>` - Configuration file with the list of shaders to compile
-- `-o, --out=<str>` - Output directory
+- `-p, --platform` (string) - *DXBC*, *DXIL* or *SPIRV*
+- `-c, --config` (string) - Configuration file with the list of shaders to compile
+- `-o, --out` (string) - Output directory
 - `-b, --binary` - Output binary files
 - `-h, --header` - Output header files
 - `-B, --binaryBlob` - Output binary blob files
 - `-H, --headerBlob` - Output header blob files
-- `--compiler=<str>` - Path to a FXC/DXC/Slang compiler
+- `--compiler` (string) - Path to a *FXC/DXC/Slang* compiler
 
 Compiler settings:
-- `-m, --shaderModel=<str>` - Shader model for DXIL/SPIRV (always SM 5.0 for DXBC)
-- `-O, --optimization=<int>` - Optimization level 0-3 (default = 3, disabled = 0)
-- `--WX` - Maps to '-WX' DXC/FXC option: warnings are errors
-- `--allResourcesBound` - Maps to `-all_resources_bound` DXC/FXC option: all resources bound
+- `-m, --shaderModel` (string) - Shader model for *DXIL/SPIRV* (always SM 5.0 for *DXBC*) in 'X_Y' format
+- `-O, --optimization` (int) - Optimization level 0-3 (default = 3, disabled = 0)
+- `-X, --compilerOptions` (string) - Custom command line options for the compiler, separated by spaces
+- `--WX` - Maps to '-WX' *DXC/FXC* option: warnings are errors
+- `--allResourcesBound` - Maps to `-all_resources_bound` *DXC/FXC* option: all resources bound
 - `--PDB` - Output PDB files in `out/PDB/` folder
-- `--stripReflection` - Maps to `-Qstrip_reflect` DXC/FXC option: strip reflection information from a shader binary
-- `--matrixRowMajor` - Maps to `-Zpr` DXC/FXC option: pack matrices in row-major order
-- `--hlsl2021` - Maps to `-HV 2021` DXC option: enable HLSL 2021 standard
-- `--slang` - Use Slang for compilation, requires `--compiler` to specify a path to `slangc` executable
-- `--slangHLSL` - Use HLSL compatibility mode when compiler is Slang
-- `-X, --compilerOptions=<str>` - Custom command line options for the compiler, separated by spaces
+- `--embedPDB`- Embed PDB with the shader binary
+- `--stripReflection` - Maps to `-Qstrip_reflect` *DXC/FXC* option: strip reflection information from a shader binary
+- `--matrixRowMajor` - Maps to `-Zpr` *DXC/FXC* option: pack matrices in row-major order
+- `--hlsl2021` - Maps to `-HV 2021` *DXC* option: enable HLSL 2021 standard
+- `--slang` - Use *Slang* for compilation, requires `--compiler` to specify a path to `slangc` executable
+- `--slangHLSL` - Use HLSL compatibility mode when compiler is *Slang*
 
 Defines & include directories:
-- `-I, --include=<str>` - Include directory(s)
-- `-D, --define=<str>` - Macro definition(s) in forms 'M=value' or 'M'
+- `-I, --include` (string) - Include directory(s)
+- `-D, --define` (string) - Macro definition(s) in forms 'M=value' or 'M'
 
 Other options:
 - `-f, --force` - Treat all source files as modified
-- `--sourceDir=<str>` - Source code directory
-- `--relaxedInclude=<str>` - Include file(s) not invoking re-compilation
-- `--outputExt=<str>` - Extension for output files, default is one of `.dxbc`, `.dxil`, `.spirv`
+- `--sourceDir` (string) - Source code directory
+- `--relaxedInclude` (string) - Include file(s) not invoking re-compilation
+- `--outputExt` (string) - Extension for output files, default is one of `.dxbc`, `.dxil`, `.spirv`
 - `--serial` - Disable multi-threading
 - `--flatten` - Flatten source directory structure in the output directory
-- `--continue` - Continue compilation if an error is occured
-- `--useAPI` - Use *FXC (d3dcompiler)* or *DXC (dxcompiler)* API explicitly (Windows only)
+- `--continue` - Continue compilation if an error occurred
 - `--colorize` - Colorize console output
 - `--verbose` - Print commands before they are executed
+- `--retryCount` - Retry count for compilation task sub-process failures
+- `--ignoreConfigDir` - Use 'current dir' instead of 'config dir' as parent path for relative dirs
+- `--compactProgress` - Compact compilation progress reporting
 
-SPIRV options:
-- `--vulkanVersion=<str>` - Vulkan environment version, maps to `-fspv-target-env` (default = 1.3)
-- `--spirvExt=<str>` - Maps to `-fspv-extension` option: add SPIR-V extension permitted to use
-- `--sRegShift=<int>` - SPIRV: register shift for sampler (`s#`) resources
-- `--tRegShift=<int>` - SPIRV: register shift for texture (`t#`) resources
-- `--bRegShift=<int>` - SPIRV: register shift for constant (`b#`) resources
-- `--uRegShift=<int>` - SPIRV: register shift for UAV (`u#`) resources
+*SPIRV* options:
+- `--vulkanMemoryLayout` (string) - Maps to `-fvk-use-<VALUE>-layout` *DXC* options: dx, gl, scalar
+- `--vulkanVersion` (string) - Vulkan environment version, maps to `-fspv-target-env` (default = 1.3)
+- `--spirvExt` (string) - Maps to `-fspv-extension` option: add *SPIRV* extension permitted to use
+- `--sRegShift` (int) - register shift for sampler (`s#`) resources
+- `--tRegShift` (int) - register shift for texture (`t#`) resources
+- `--bRegShift` (int) - register shift for constant (`b#`) resources
+- `--uRegShift` (int) - register shift for UAV (`u#`) resources
+- `--noRegShifts` - Don't specify any register shifts for the compiler
 
 ## Config file structure
 
@@ -84,8 +97,8 @@ path/to/shader -T profile [-O3 -o "output/subdirectory" -E entry -D DEF1={0,1} -
 ```
 
 where:
-- `path/to/shader` - shader source file
-- `-T` - shader profile, can be:
+- `path/to/shader` (string) - shader source file
+- `-T, --profile` (string) - shader profile, can be:
   - `vs` - vertex
   - `ps` - pixel
   - `gs` - geometry
@@ -94,10 +107,12 @@ where:
   - `cs` - compute
   - `ms` - mesh
   - `as` - amplification
-- `-E` - (optional) entry point (`main` by default)
-- `-D` - (optional) adds a macro definition to the list, optional range of possible values can be provided in `{}`
-- `-O` - (optional) optimization level (global setting used by default)
-- `-o` - (optional) output directory override
+- `-E, --entryPoint` (string, optional) - Entry point (`main` by default)
+- `-D, --define` (string, optional) - Adds a macro definition to the list, optional range of possible values can be provided in `{}`
+- `-O, --optimization` (int, optional) - Optimization level (global setting used by default)
+- `-o, --output` (string, optional) - Output directory override
+- `-s, --outputSuffix` (string, optional) - Suffix to add before extension after filename
+- `-m, --shaderModel` (string, optional) - Shader model for *DXIL/SPIRV* (always SM 5.0 for *DXBC*) in 'X_Y' format
 
 Additionally, the config file parser supports:
 
@@ -107,12 +122,6 @@ Additionally, the config file parser supports:
 - `#else`
 - `#endif`
 
-## Shader blob API
+## Shader blob
 
-When the `--blob` command line argument is specified, ShaderMake will package multiple permutations for the same shader into a single "blob" file. These files use a custom format that is somewhat similar to regular TAR.
-
-ShaderMake provides a small library with parsing functions to use these blob files in applications. This library can be statically linked with an application by including ShaderMake as a git submodule and linking the `ShaderMakeBlob` target to your application:
-
-    target_link_libraries(my_target PRIVATE ShaderMakeBlob)
-
-Then include `<ShaderMake/ShaderBlob.h>` and use the `ShaderMake::FindPermutationInBlob` to locate a specific shader version in a blob. If that is unsuccessful, the `ShaderMake::EnumeratePermutationsInBlob` and/or `ShaderMake::FormatShaderNotFoundMessage` functions can help you provide a helpful error message to the user.
+When the `--binaryBlob` or `--headerBlob` command line arguments are specified, ShaderMake will package multiple permutations for the same shader into a single "blob" file with a custom format. ShaderMake provides a small library with parsing functions to use these blob files. This library can be statically linked with an application by including `ShaderMake` into the project and linking `ShaderMakeBlob` target to your application. Then include `<ShaderMake/ShaderBlob.h>` and use the `ShaderMake::FindPermutationInBlob()` to locate a specific shader permutation in a blob. If that is unsuccessful, `ShaderMake::EnumeratePermutationsInBlob()` and/or `ShaderMake::FormatShaderNotFoundMessage()` functions can help to provide a meaningful error message to the user.

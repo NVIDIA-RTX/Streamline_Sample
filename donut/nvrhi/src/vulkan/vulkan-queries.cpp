@@ -149,7 +149,10 @@ namespace nvrhi::vulkan
     {
         TimerQuery* query = checked_cast<TimerQuery*>(_query);
 
-        assert(query->started);
+        if (!query->started)
+        {
+            return false;
+        }
 
         if (query->resolved)
         {
@@ -163,9 +166,9 @@ namespace nvrhi::vulkan
                                                  query->beginQueryIndex, 2,
                                                  sizeof(timestamps), timestamps,
                                                  sizeof(timestamps[0]), vk::QueryResultFlags());
-        assert(res == vk::Result::eSuccess || res == vk::Result::eNotReady);
+        assert(res == vk::Result::eSuccess || res == vk::Result::eNotReady || res == vk::Result::eErrorDeviceLost);
 
-        if (res == vk::Result::eNotReady)
+        if (res == vk::Result::eNotReady || res == vk::Result::eErrorDeviceLost)
         {
             return false;
         }

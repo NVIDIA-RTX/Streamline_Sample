@@ -49,6 +49,7 @@ MaterialBindingCache::MaterialBindingCache(
     {
         nvrhi::BindingLayoutItem layoutItem{};
         layoutItem.slot = item.slot;
+        layoutItem.size = 1;
         
         switch (item.resource)
         {

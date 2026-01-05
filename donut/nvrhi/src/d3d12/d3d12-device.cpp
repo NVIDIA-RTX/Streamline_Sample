@@ -109,6 +109,7 @@ namespace nvrhi::d3d12
         m_Resources.samplerHeap.allocateResources(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER, desc.samplerHeapSize, true);
 
         m_Context.device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS, &m_Options, sizeof(m_Options));
+        m_Context.device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS1, &m_Options1, sizeof(m_Options1));
         bool hasOptions5 = SUCCEEDED(m_Context.device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS5, &m_Options5, sizeof(m_Options5)));
         bool hasOptions6 = SUCCEEDED(m_Context.device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS6, &m_Options6, sizeof(m_Options6)));
         bool hasOptions7 = SUCCEEDED(m_Context.device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS7, &m_Options7, sizeof(m_Options7)));
@@ -138,6 +139,19 @@ namespace nvrhi::d3d12
         {
             m_SamplerFeedbackSupported = m_Options7.SamplerFeedbackTier >= D3D12_SAMPLER_FEEDBACK_TIER_0_9;
         }
+
+#if NVRHI_D3D12_WITH_COOPVEC
+        if (SUCCEEDED(m_Context.device->QueryInterface(&m_Context.devicePreview)))
+        {
+            D3D12_FEATURE_DATA_D3D12_OPTIONS_EXPERIMENTAL experimentalOptions{};
+            if (SUCCEEDED(m_Context.device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS_EXPERIMENTAL,
+                &experimentalOptions, UINT(sizeof experimentalOptions))))
+            {
+                m_CoopVecInferencingSupported = experimentalOptions.CooperativeVectorTier >= D3D12_COOPERATIVE_VECTOR_TIER_1_0;
+                m_CoopVecTrainingSupported = experimentalOptions.CooperativeVectorTier >= D3D12_COOPERATIVE_VECTOR_TIER_1_1;
+            }
+        }
+#endif
 
         if (hasOptions6)
         {
@@ -181,9 +195,16 @@ namespace nvrhi::d3d12
                 m_SinglePassStereoSupported = true;
             }
 
+            // There is no query for HLSL extension UAV support, so query support for the oldest instruction available.
+            bool supported = false;
+            if (NvAPI_D3D12_IsNvShaderExtnOpCodeSupported(m_Context.device, NV_EXTN_OP_SHFL, &supported) == NVAPI_OK && supported)
+            {
+                m_HlslExtensionsSupported = true;
+            }
+
             // There is no query for FastGS, so query support for FP16 atomics as a proxy.
             // Both features were introduced in the same architecture (Maxwell).
-            bool supported = false;
+            supported = false;
             if (NvAPI_D3D12_IsNvShaderExtnOpCodeSupported(m_Context.device, NV_EXTN_OP_FP16_ATOMIC, &supported) == NVAPI_OK && supported)
             {
                 m_FastGeometryShaderSupported = true;
@@ -625,6 +646,29 @@ namespace nvrhi::d3d12
             return true;
         case Feature::HeapDirectlyIndexed:
             return m_HeapDirectlyIndexedEnabled;
+        case Feature::SamplerFeedback:
+            return m_SamplerFeedbackSupported;
+        case Feature::HlslExtensionUAV:
+            return m_HlslExtensionsSupported;
+        case Feature::WaveLaneCountMinMax:
+            if (m_Options1.WaveLaneCountMin == 0)
+                return false;
+            if (pInfo)
+            {
+                if (infoSize == sizeof(WaveLaneCountMinMaxFeatureInfo))
+                {
+                    auto* pWaveLaneCountMinMaxInfo = reinterpret_cast<WaveLaneCountMinMaxFeatureInfo*>(pInfo);
+                    pWaveLaneCountMinMaxInfo->minWaveLaneCount = m_Options1.WaveLaneCountMin;
+                    pWaveLaneCountMinMaxInfo->maxWaveLaneCount = m_Options1.WaveLaneCountMax;
+                }
+                else
+                    utils::NotSupported();
+            }
+            return true;
+        case Feature::CooperativeVectorInferencing:
+            return m_CoopVecInferencingSupported;
+        case Feature::CooperativeVectorTraining:
+            return m_CoopVecTrainingSupported;  
         default:
             return false;
         }
@@ -676,6 +720,95 @@ namespace nvrhi::d3d12
             result = result | FormatSupport::ShaderUavStore;
 
         return result;
+    }
+
+    coopvec::DeviceFeatures Device::queryCoopVecFeatures()
+    {
+        coopvec::DeviceFeatures result;
+#if NVRHI_D3D12_WITH_COOPVEC
+        // Get the format count
+        D3D12_FEATURE_DATA_COOPERATIVE_VECTOR coopVecData{};
+        if (m_Context.device->CheckFeatureSupport(D3D12_FEATURE_COOPERATIVE_VECTOR,
+            &coopVecData, UINT(sizeof coopVecData)) != S_OK)
+            return result;
+        
+        // Get the supported format list
+        std::vector<D3D12_COOPERATIVE_VECTOR_PROPERTIES_MUL> matMulProperties(coopVecData.MatrixVectorMulAddPropCount);
+        std::vector<D3D12_COOPERATIVE_VECTOR_PROPERTIES_ACCUMULATE> outerProductAccumulateProperties(coopVecData.OuterProductAccumulatePropCount);
+        std::vector<D3D12_COOPERATIVE_VECTOR_PROPERTIES_ACCUMULATE> vectorAccumulateProperties(coopVecData.VectorAccumulatePropCount);
+        coopVecData.pMatrixVectorMulAddProperties = matMulProperties.data();
+        coopVecData.pOuterProductAccumulateProperties = outerProductAccumulateProperties.data();
+        coopVecData.pVectorAccumulateProperties = vectorAccumulateProperties.data();
+        if (m_Context.device->CheckFeatureSupport(D3D12_FEATURE_COOPERATIVE_VECTOR,
+            &coopVecData, UINT(sizeof coopVecData)) != S_OK)
+            return result;
+
+        result.matMulFormats.reserve(matMulProperties.size());
+        for (const auto& prop : matMulProperties)
+        {
+            coopvec::MatMulFormatCombo& combo = result.matMulFormats.emplace_back();
+            combo.inputType = convertCoopVecDataType(prop.InputType);
+            combo.inputInterpretation = convertCoopVecDataType(prop.InputInterpretation);
+            combo.matrixInterpretation = convertCoopVecDataType(prop.MatrixInterpretation);
+            combo.biasInterpretation = convertCoopVecDataType(prop.BiasInterpretation);
+            combo.outputType = convertCoopVecDataType(prop.OutputType);
+            combo.transposeSupported = !!prop.TransposeSupported;
+        }
+
+        bool outerProductFloat16Supported = false;
+        bool outerProductFloat32Supported = false;
+        bool vectorAccumulateFloat16Supported = false;
+        bool vectorAccumulateFloat32Supported = false;
+
+        for (const auto& prop : outerProductAccumulateProperties)
+        {
+            if (prop.AccumulationType == D3D12_LINEAR_ALGEBRA_DATATYPE_FLOAT16)
+            {
+                outerProductFloat16Supported = true;
+            }
+            else if (prop.AccumulationType == D3D12_LINEAR_ALGEBRA_DATATYPE_FLOAT32)
+            {
+                outerProductFloat32Supported = true;
+            }
+        }
+        for (const auto& prop : vectorAccumulateProperties)
+        {
+            if (prop.AccumulationType == D3D12_LINEAR_ALGEBRA_DATATYPE_FLOAT16)
+            {
+                vectorAccumulateFloat16Supported = true;
+            }
+            else if (prop.AccumulationType == D3D12_LINEAR_ALGEBRA_DATATYPE_FLOAT32)
+            {
+                vectorAccumulateFloat32Supported = true;
+            }
+        }
+
+        result.trainingFloat16 = outerProductFloat16Supported && vectorAccumulateFloat16Supported;
+        result.trainingFloat32 = outerProductFloat32Supported && vectorAccumulateFloat32Supported;
+#endif
+        return result;
+    }
+
+    size_t Device::getCoopVecMatrixSize(coopvec::DataType type, coopvec::MatrixLayout layout, int rows, int columns)
+    {
+#if NVRHI_D3D12_WITH_COOPVEC
+        D3D12_LINEAR_ALGEBRA_MATRIX_CONVERSION_DEST_INFO destInfo = {};
+        destInfo.DestLayout = convertCoopVecMatrixLayout(layout);
+        destInfo.NumRows = rows;
+        destInfo.NumColumns = columns;
+        destInfo.DestDataType = convertCoopVecDataType(type);
+        destInfo.DestStride = UINT(coopvec::getOptimalMatrixStride(type, layout, rows, columns));
+
+        m_Context.devicePreview->GetLinearAlgebraMatrixConversionDestinationInfo(&destInfo);
+
+        return destInfo.DestSize;
+#else
+        (void)type;
+        (void)layout;
+        (void)rows;
+        (void)columns;
+        return 0;
+#endif
     }
 
     Object Device::getNativeQueue(ObjectType objectType, CommandQueue queue)

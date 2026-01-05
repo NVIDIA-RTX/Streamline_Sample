@@ -134,7 +134,8 @@ namespace donut::app
 #endif
 
 #if DONUT_WITH_STREAMLINE
-        int streamlineAppId = 0;
+        int streamlineAppId = 1; // default app id
+        bool checkStreamlineSignature = true; // check if the streamline dlls are signed
         bool enableStreamlineLog = false;
 #endif
     };
@@ -144,7 +145,7 @@ namespace donut::app
         bool startMaximized = false; // ignores backbuffer width/height to be monitor size
         bool startFullscreen = false;
         bool startBorderless = false;
-        bool allowModeSwitch = true;
+        bool allowModeSwitch = false;
         int windowPosX = -1;            // -1 means use default placement
         int windowPosY = -1;
         uint32_t backBufferWidth = 1280;
@@ -192,7 +193,12 @@ namespace donut::app
 #if DONUT_WITH_VULKAN
         std::vector<std::string> requiredVulkanDeviceExtensions;
         std::vector<std::string> optionalVulkanDeviceExtensions;
-        std::vector<size_t> ignoredVulkanValidationMessageLocations;
+        std::vector<size_t> ignoredVulkanValidationMessageLocations = {
+            // Ignore the warnings like "the storage image descriptor [...] is accessed by a OpTypeImage that has
+            //   a Format operand ... which doesn't match the VkImageView ..." -- even when the GPU supports
+            // storage without format, which all modern GPUs do, there is no good way to enable it in the shaders.
+            0x13365b2
+        };
         std::function<void(VkDeviceCreateInfo&)> deviceCreateInfoCallback;
 
         // This pointer specifies an optional structure to be put at the end of the chain for 'vkGetPhysicalDeviceFeatures2' call.

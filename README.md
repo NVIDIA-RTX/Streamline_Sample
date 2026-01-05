@@ -1,4 +1,4 @@
-# SL Version 2.9.0
+# SL Version 2.10.0
 
 # StreamlineSample
 
@@ -22,13 +22,13 @@ There is also an experimental option to enable NGX-only integration instead of u
         1. Ensure the CMakeLists.txt's option "Use Streamline" is ON (`-DUSE_SL=1` - the default).
         2. Copy the Streamline SDK into the sample's `streamline/` folder
         - If you have built the Streamline SDK from source, you must run the SDK's package.bat script in order to prepare all the Streamline SDK files to be used within the sample app. After running the SDK's package script, the SDK files will be placed in `_sdk`  (unless you specified the -dir commandline option). Copy the entire contents of the `_sdk` folder to the sample app's `streamline` folder.
-    * NGX integration (only Latewarp and Reflex implementations are currently supported):
-        1. Set the CMakeLists.txt's option "Use Streamline" to OFF (`-DUSE_SL=0`).
+    * NGX integration (only FrameWarp (Latewarp) and Reflex implementations are currently supported):
+        1. Set the CMakeLists.txt's option "Use Streamline" to OFF (`-DUSE_SL=0`), and turn FrameWarp on (`-DSTREAMLINE_FEATURE_LATEWARP=1`)
         *** Please note the disclaimers in the USE_SL=OFF path of NVWrapper.h ***
         *** If using Vulkan path with USE_SL=OFF, revert the patch to the donut/nvrhi/Vulkan-Headers repo ***
-        2. Copy the entire contents of the NGX Latewarp SDK (`nvngx_latewarp_sdk`, `symbols`) to the sample app's `ngx` folder. Any versions of the SDK will work.
+        2. Copy the entire contents of the NGX FrameWarp SDK (`include`, `lib`) to the sample app's `ngx` folder.
         3. Copy the entire contents of the nvapi SDK (`amd64`, `x86`) to the sample app's `nvapi` folder. This can be any of the public releases (version R560+)
-        4. Though Reflex Low Latency is crucial for best performance with Latewarp, it is not currently implemented in the NGX integration path, samples for Reflex integration can be found with the public SDK (any version)
+        4. Though Reflex Low Latency is crucial for best performance with FrameWarp, it is not currently implemented in the NGX integration path, samples for Reflex integration can be found with the public SDK (any version)
     * Be sure to clean cmake artifacts when changing configurations
 5. Pick features to enable
     * Compile time feature enabling can be toggled in CMakeLists.txt (many are enabled by default)

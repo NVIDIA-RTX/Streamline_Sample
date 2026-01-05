@@ -23,9 +23,10 @@
 #pragma pack_matrix(row_major)
 
 #include <donut/shaders/ssao_cb.h>
+#include <donut/shaders/binding_helpers.hlsli>
 
 Texture2D<float> t_InputDepth : register(t0);
-RWTexture2DArray<float> u_DeinterleavedDepth : register(u0);
+VK_IMAGE_FORMAT("r32f") RWTexture2DArray<float> u_DeinterleavedDepth : register(u0);
 
 cbuffer c_Ssao : register(b0)
 {

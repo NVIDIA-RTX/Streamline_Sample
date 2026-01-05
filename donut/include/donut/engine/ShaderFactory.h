@@ -107,14 +107,23 @@ namespace donut::engine
         // Creates a shader from binary file.
         nvrhi::ShaderHandle CreateShader(const char* fileName, const char* entryName, const std::vector<ShaderMacro>* pDefines, const nvrhi::ShaderDesc& desc);
 
+        // A version of CreateShader that takes a ShaderType instead of a full ShaderDesc.
+        nvrhi::ShaderHandle CreateShader(const char* fileName, const char* entryName, const std::vector<ShaderMacro>* pDefines, nvrhi::ShaderType shaderType);
+
         // Creates a shader library from binary file.
         nvrhi::ShaderLibraryHandle CreateShaderLibrary(const char* fileName, const std::vector<ShaderMacro>* pDefines);
 
         // Creates a shader from the bytecode array.
         nvrhi::ShaderHandle CreateStaticShader(StaticShader shader, const std::vector<ShaderMacro>* pDefines, const nvrhi::ShaderDesc& desc);
 
+        // A version of CreateStaticShader that takes a ShaderType instead of a full ShaderDesc.
+        nvrhi::ShaderHandle CreateStaticShader(StaticShader shader, const std::vector<ShaderMacro>* pDefines, nvrhi::ShaderType shaderType);
+
         // Creates a shader from one of the platform-speficic bytecode arrays, selecting it based on the device's graphics API.
         nvrhi::ShaderHandle CreateStaticPlatformShader(StaticShader dxbc, StaticShader dxil, StaticShader spirv, const std::vector<ShaderMacro>* pDefines, const nvrhi::ShaderDesc& desc);
+
+        // A version of CreateStaticPlatformShader that takes a ShaderType instead of a full ShaderDesc.
+        nvrhi::ShaderHandle CreateStaticPlatformShader(StaticShader dxbc, StaticShader dxil, StaticShader spirv, const std::vector<ShaderMacro>* pDefines, nvrhi::ShaderType shaderType);
 
         // Creates a shader library from the bytecode array.
         nvrhi::ShaderLibraryHandle CreateStaticShaderLibrary(StaticShader shader, const std::vector<ShaderMacro>* pDefines);
@@ -125,6 +134,9 @@ namespace donut::engine
         // Tries to create a shader from one of the platform-specific bytecode arrays (calling CreateStaticPlatformShader).
         // If that fails (e.g. there is no static bytecode), creates a shader from the filesystem binary file (calling CreateShader).
         nvrhi::ShaderHandle CreateAutoShader(const char* fileName, const char* entryName, StaticShader dxbc, StaticShader dxil, StaticShader spirv, const std::vector<ShaderMacro>* pDefines, const nvrhi::ShaderDesc& desc);
+
+        // A versoin of CreateAutoShader that takes a ShaderType instead of a full ShaderDesc.
+        nvrhi::ShaderHandle CreateAutoShader(const char* fileName, const char* entryName, StaticShader dxbc, StaticShader dxil, StaticShader spirv, const std::vector<ShaderMacro>* pDefines, nvrhi::ShaderType shaderType);
 
         // Tries to create a shader library from one of the platform-specific bytecode arrays (calling CreateStaticPlatformShaderLibrary).
         // If that fails (e.g. there is no static bytecode), creates a shader library from the filesystem binary file (calling CreateShaderLibrary).

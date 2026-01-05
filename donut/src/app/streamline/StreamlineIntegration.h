@@ -27,6 +27,10 @@
 // Streamline Core
 #include <sl.h>
 
+#if DONUT_WITH_VULKAN
+#include <vulkan/vulkan.hpp>
+#endif
+
 namespace donut::app
 {
 
@@ -56,10 +60,11 @@ public:
     virtual bool IsReflexAvailable() const override { return m_reflexAvailable; }
     virtual bool IsPCLAvailable() const override { return m_pclAvailable; }
     virtual void SetReflexConsts(const ReflexOptions& options) override;
-
+    virtual void GetReflexState(ReflexState& state) const override;
     virtual void ReflexTriggerFlash(int frameNumber) override;
     virtual void ReflexTriggerPcPing(int frameNumber) override;
-    
+
+    virtual void GetDLSSGState(DLSSGState& state, const DLSSGOptions& options) override;
     virtual void SetDLSSGOptions(const DLSSGOptions& options) override;
     virtual bool IsDLSSGAvailable() const override { return m_dlssgAvailable; }
     virtual void CleanupDLSSG(bool wfi) override;
@@ -94,6 +99,11 @@ public:
 
     virtual void UnTagResourcesDeepDVC() override;
 
+    // * If roughness != nullptr, normalsAndOptionalRoughness contains only normals. If roughness == nullptr then the 
+    //   roughness value should be in .a channel of the normalsAndOptionalRoughness and normalRoughnessMode in 
+    //   StreamlineInterface::DLSSRROptions must be set to DLSSRRNormalRoughnessMode::ePacked.
+    // * Either specHitDist or specMotionVectors should be provided but not both nor neither. Refer to DLSS-RR 
+    //   documentation for more detail.
     virtual void TagResourcesDLSSRR(
         nvrhi::ICommandList* commandList,
         const donut::engine::IView* view,
@@ -102,14 +112,17 @@ public:
         nvrhi::ITexture* inputColor,
         nvrhi::ITexture* diffuseAlbedo,
         nvrhi::ITexture* specAlbedo,
-        nvrhi::ITexture* normals,
+        nvrhi::ITexture* normalsAndOptionalRoughness,
         nvrhi::ITexture* roughness,
         nvrhi::ITexture* specHitDist,
+        nvrhi::ITexture* specMotionVectors,
         nvrhi::ITexture* outputColor
     ) override;
 private:
     StreamlineIntegration() {}
     void UpdateFeatureAvailable();
+    uint32_t CheckNumSupportedFeatures(const sl::AdapterInfo& adapterInfo);
+
     nvrhi::Object GetNativeCommandList(nvrhi::ICommandList* commandList);
 
     bool m_slInitialized = false;
@@ -130,6 +143,7 @@ private:
 
     static sl::Resource AllocateResourceCallback(const sl::ResourceAllocationDesc* resDesc, void* device);
     static void ReleaseResourceCallback(sl::Resource* resource, void* device);
+    static bool UpgradeInterface(IUnknown*& interfacePointer);
 
     sl::FrameToken* m_currentFrame = nullptr;
     sl::ViewportHandle m_viewport = {0};
@@ -151,8 +165,29 @@ public:
 
     bool InitializePreDevice(nvrhi::GraphicsAPI api, int appId, const bool checkSig = true, const bool enableLog = false);
 #if DONUT_WITH_DX11 || DONUT_WITH_DX12
+    bool SetD3DDevice(IUnknown* nativeDevice);
     bool InitializeDeviceDX(nvrhi::IDevice *device, AdapterInfo::LUID* pAdapterIdDx11 = nullptr);
+    // In-place slUpgradeInterface of a raw pointer
+    template<typename T>
+    static inline bool UpgradeInterface(T*& interfacePointer)
+    {
+        // Ensure that T derives from IUnknown
+        static_assert(std::is_base_of<IUnknown, T>::value);
+        return UpgradeInterface((IUnknown*&)interfacePointer);
+    }
+    // In-place slUpgradeInterface of a nvrhi::RefCountPtr
+    template<typename T>
+    static inline bool UpgradeInterface(nvrhi::RefCountPtr<T>& interfacePointer)
+    {
+        // Ensure that T derives from IUnknown
+        static_assert(std::is_base_of<IUnknown, T>::value);
+        T* rawPointer = interfacePointer; // We need to pass a raw pointer to UpgradeInterface
+        bool result = UpgradeInterface(rawPointer);
+        interfacePointer = rawPointer;
+        return result;
+    }
 #endif
+
 
 #if DONUT_WITH_VULKAN
     // see sl::VulkanInfo in sl_helpers_vk.h
@@ -177,8 +212,14 @@ public:
 #endif
 
     void Shutdown();
-    
-    int FindBestAdapter(void* vkDevices = nullptr);
+
+#if DONUT_WITH_DX11 || DONUT_WITH_DX12
+    uint32_t FindBestAdapterDX();
+#endif
+
+#if DONUT_WITH_VULKAN
+    uint32_t FindBestAdapterVulkan(const std::vector <vk::PhysicalDevice>& vkDevices);
+#endif
 };
 
 } // namespace donut::app

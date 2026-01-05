@@ -58,6 +58,10 @@ if (NVRHI_WITH_VULKAN AND NOT TARGET Vulkan-Headers AND NOT TARGET Vulkan::Heade
     add_subdirectory(thirdparty/Vulkan-Headers)
 endif()
 
+if(NVRHI_WITH_DX12 AND NOT TARGET DirectX-Headers AND NOT TARGET Microsoft::DirectX-Headers)
+    add_subdirectory(thirdparty/DirectX-Headers)
+endif()
+
 if (NVRHI_WITH_RTXMU)
     if (TARGET Vulkan-Headers)
         get_target_property(RTXMU_VULKAN_INCLUDE_DIR Vulkan-Headers INTERFACE_INCLUDE_DIRECTORIES)
@@ -113,9 +117,7 @@ set(include_validation
 set(src_validation
     src/validation/validation-commandlist.cpp
     src/validation/validation-device.cpp
-    src/validation/validation-backend.h
-    src/common/sparse-bitset.h
-    src/common/sparse-bitset.cpp)
+    src/validation/validation-backend.h)
 
 set(include_d3d11
     include/nvrhi/d3d11.h)
@@ -273,7 +275,7 @@ if (NVRHI_WITH_DX12)
         target_link_libraries(${nvrhi_d3d12_target} PUBLIC rtxmu)
     endif()
 
-    target_link_libraries(${nvrhi_d3d12_target} PUBLIC d3d12 dxguid)
+    target_link_libraries(${nvrhi_d3d12_target} PUBLIC Microsoft::DirectX-Headers Microsoft::DirectX-Guids d3d12)
 
     if (NVRHI_WITH_NVAPI)
         target_link_libraries(${nvrhi_d3d12_target} PUBLIC nvapi)

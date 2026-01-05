@@ -43,9 +43,6 @@ void input_assembler(
     in uint i_instance : SV_InstanceID,
     out float4 o_position : SV_Position,
     out SceneVertex o_vtx,
-#if MOTION_VECTORS
-    out float3 o_prevWorldPos : PREV_WORLD_POS,
-#endif
     out uint o_instance : INSTANCE
 )
 {
@@ -87,9 +84,6 @@ void buffer_loads(
 	in uint i_instance : SV_InstanceID,
     out float4 o_position : SV_Position,
     out SceneVertex o_vtx,
-#if MOTION_VECTORS
-    out float3 o_prevWorldPos : PREV_WORLD_POS,
-#endif
     out uint o_instance : INSTANCE
 )
 {

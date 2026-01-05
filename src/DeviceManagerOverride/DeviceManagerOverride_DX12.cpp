@@ -296,6 +296,13 @@ bool DeviceManagerOverride_DX12::BeginFrame()
         hr = pSwapChain1_base->QueryInterface(IID_PPV_ARGS(&m_SwapChain));
         if (hr != S_OK)  donut::log::fatal("QueryInterface failed");
 
+        // Disable DXGI's automatic Alt+Enter handling after swap chain recreation
+        hr = m_DxgiFactory2->MakeWindowAssociation(m_hWnd, DXGI_MWA_NO_ALT_ENTER);
+        if (FAILED(hr))
+        {
+            donut::log::warning("Failed to set MakeWindowAssociation after DLSSG swap chain recreation, error code = 0x%08x", hr);
+        }
+
         if (!CreateRenderTargets()) 
             donut::log::fatal("CreateRenderTarget failed");
 
@@ -335,6 +342,13 @@ bool DeviceManagerOverride_DX12::BeginFrame()
         if (hr != S_OK)  donut::log::fatal("CreateSwapChainForHwnd failed");
         hr = pSwapChain1_base->QueryInterface(IID_PPV_ARGS(&m_SwapChain));
         if (hr != S_OK)  donut::log::fatal("QueryInterface failed");
+
+        // Disable DXGI's automatic Alt+Enter handling after swap chain recreation
+        hr = m_DxgiFactory2->MakeWindowAssociation(m_hWnd, DXGI_MWA_NO_ALT_ENTER);
+        if (FAILED(hr))
+        {
+            donut::log::warning("Failed to set MakeWindowAssociation after Latewarp swap chain recreation, error code = 0x%08x", hr);
+        }
 
         if (!CreateRenderTargets()) 
             donut::log::fatal("CreateRenderTarget failed");

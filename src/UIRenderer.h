@@ -586,6 +586,8 @@ protected:
                     {sl::DLSSPreset::ePresetF, "Preset F##Presets"},
                     {sl::DLSSPreset::ePresetJ, "Preset J##Presets"},
                     {sl::DLSSPreset::ePresetK, "Preset K##Presets"},
+                    {sl::DLSSPreset::ePresetL, "Preset L##Presets"},
+                    {sl::DLSSPreset::ePresetM, "Preset M##Presets"}
                 };
 
                 if (ImGui::CollapsingHeader("Presets")) {

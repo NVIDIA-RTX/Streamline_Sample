@@ -20,10 +20,12 @@
 * DEALINGS IN THE SOFTWARE.
 */
 
-#include <ShaderMake/ShaderBlob.h>
+#include "ShaderBlob.h"
 
 #include <sstream>
 #include <cstring>
+#include <numeric>      // std::iota
+#include <algorithm>    // std::sort, std::stable_sort
 
 namespace ShaderMake
 {
@@ -55,10 +57,21 @@ bool FindPermutationInBlob(const void* blob, size_t blobSize, const ShaderConsta
     blob = static_cast<const char*>(blob) + g_BlobSignatureSize;
     blobSize -= g_BlobSignatureSize;
 
-    std::stringstream ss;
+    // Making a vector of constant names to sort them
+    std::vector<std::string> constantNames((size_t)numConstants);
     for (uint32_t n = 0; n < numConstants; n++)
     {
         const ShaderConstant& constant = constants[n];
+        constantNames[n] = constant.name;
+    }
+    // Sorting constant names
+    std::vector<size_t> sortedConstantsIndices = GetSortedConstantsIndices(constantNames);
+
+    std::stringstream ss;
+    for (uint32_t n = 0; n < numConstants; n++)
+    {
+        size_t sortedIndex = sortedConstantsIndices[n];
+        const ShaderConstant& constant = constants[sortedIndex];
         ss << constant.name << "=" << constant.value;
         if (n + 1 < numConstants)
             ss << " ";
@@ -192,5 +205,26 @@ bool WritePermutation(
     success &= write(binary, binarySize, context);
     return success;
 }
+
+
+std::vector<size_t> GetSortedConstantsIndices(
+    const std::vector<std::string>& constants
+)
+{
+    // Sorting defines indices to have defines sorted order. Example -> ["B", "A", "C"] -> [1, 0, 2]
+    // initialize original index locations
+    std::vector<size_t> sortedDefinesIndices(constants.size());
+    iota(sortedDefinesIndices.begin(), sortedDefinesIndices.end(), 0);
+
+    // sort indexes based on comparing defines in constants
+    // using std::stable_sort instead of std::sort
+    // to avoid unnecessary index re-orderings
+    // when constants contains elements of equal values 
+    std::stable_sort(sortedDefinesIndices.begin(), sortedDefinesIndices.end(),
+        [&constants](size_t i1, size_t i2) { return constants[i1] < constants[i2]; });
+
+    return sortedDefinesIndices;
+}
+
 
 } // namespace ShaderMake

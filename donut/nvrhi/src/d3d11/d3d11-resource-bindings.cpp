@@ -55,7 +55,7 @@ BindingSetHandle Device::createBindingSet(const BindingSetDesc& desc, IBindingLa
 
     for (const BindingSetItem& binding : desc.bindings)
     {
-        const uint32_t& slot = binding.slot;
+        uint32_t slot = binding.slot + binding.arrayElement;
 
         switch (binding.type)  // NOLINT(clang-diagnostic-switch-enum)
         {

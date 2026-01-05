@@ -372,6 +372,30 @@ namespace nvrhi::d3d11
         }
     }
 
+    void CommandList::clearSamplerFeedbackTexture(ISamplerFeedbackTexture* texture)
+    {
+        (void)texture;
+
+        utils::NotSupported();
+    }
+
+    void CommandList::decodeSamplerFeedbackTexture(IBuffer* buffer, ISamplerFeedbackTexture* texture, nvrhi::Format format)
+    {
+        (void)buffer;
+        (void)texture;
+        (void)format;
+
+        utils::NotSupported();
+    }
+
+    void CommandList::setSamplerFeedbackTextureState(ISamplerFeedbackTexture* texture, ResourceStates stateBits)
+    {
+        (void)texture;
+        (void)stateBits;
+
+        utils::NotSupported();
+    }
+
     void CommandList::copyTexture(ID3D11Resource *dst, const TextureDesc& dstDesc, const TextureSlice& dstSlice,
                                              ID3D11Resource *src, const TextureDesc& srcDesc, const TextureSlice& srcSlice)
     {

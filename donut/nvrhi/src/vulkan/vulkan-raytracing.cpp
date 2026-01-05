@@ -319,10 +319,150 @@ namespace nvrhi::vulkan
         return MemoryRequirements();
     }
 
-    rt::cluster::OperationSizeInfo Device::getClusterOperationSizeInfo(const rt::cluster::OperationParams&)
+    static vk::ClusterAccelerationStructureTypeNV convertClusterAccelerationStructureType(rt::cluster::OperationMoveType type)
     {
-        utils::NotSupported();
-        return rt::cluster::OperationSizeInfo();
+        switch (type)
+        {
+            case rt::cluster::OperationMoveType::BottomLevel: return vk::ClusterAccelerationStructureTypeNV::eClustersBottomLevel;
+            case rt::cluster::OperationMoveType::ClusterLevel: return vk::ClusterAccelerationStructureTypeNV::eTriangleCluster;
+            case rt::cluster::OperationMoveType::Template: return vk::ClusterAccelerationStructureTypeNV::eTriangleClusterTemplate;
+            default:
+                assert(false);
+                return vk::ClusterAccelerationStructureTypeNV::eClustersBottomLevel;
+        }
+    }
+
+    static vk::ClusterAccelerationStructureOpTypeNV convertClusterOperationType(rt::cluster::OperationType type, const VulkanContext& context)
+    {
+        switch (type)
+        {
+            case rt::cluster::OperationType::Move:
+                return vk::ClusterAccelerationStructureOpTypeNV::eMoveObjects;
+            case rt::cluster::OperationType::ClasBuild:
+                return vk::ClusterAccelerationStructureOpTypeNV::eBuildTriangleCluster;
+            case rt::cluster::OperationType::ClasBuildTemplates:
+                return vk::ClusterAccelerationStructureOpTypeNV::eBuildTriangleClusterTemplate;
+            case rt::cluster::OperationType::ClasInstantiateTemplates:
+                return vk::ClusterAccelerationStructureOpTypeNV::eInstantiateTriangleCluster;
+            case rt::cluster::OperationType::BlasBuild:
+                return vk::ClusterAccelerationStructureOpTypeNV::eBuildClustersBottomLevel;
+            default:
+                context.error("Invalid cluster operation type");
+                return vk::ClusterAccelerationStructureOpTypeNV::eMoveObjects;
+        }
+    }
+
+    static vk::ClusterAccelerationStructureOpModeNV convertClusterOperationMode(rt::cluster::OperationMode mode, const VulkanContext& context)
+    {
+        switch (mode)
+        {
+            case rt::cluster::OperationMode::ImplicitDestinations:
+                return vk::ClusterAccelerationStructureOpModeNV::eImplicitDestinations;
+            case rt::cluster::OperationMode::ExplicitDestinations:
+                return vk::ClusterAccelerationStructureOpModeNV::eExplicitDestinations;
+            case rt::cluster::OperationMode::GetSizes:
+                return vk::ClusterAccelerationStructureOpModeNV::eComputeSizes;
+            default:
+                context.error("Invalid cluster operation mode");
+                return vk::ClusterAccelerationStructureOpModeNV::eImplicitDestinations;
+        }
+    }
+
+    static vk::BuildAccelerationStructureFlagsKHR convertClusterOperationFlags(rt::cluster::OperationFlags flags)
+    {
+        vk::BuildAccelerationStructureFlagsKHR operationFlags = {};
+
+        bool fastTrace = (flags & rt::cluster::OperationFlags::FastTrace) != 0;
+        bool fastBuild = (flags & rt::cluster::OperationFlags::FastBuild) != 0;
+        
+        if (fastTrace)
+            operationFlags |= vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace;
+        if (!fastTrace && fastBuild)
+            operationFlags |= vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastBuild;
+        if ((flags & rt::cluster::OperationFlags::AllowOMM) != 0)
+            operationFlags |= vk::BuildAccelerationStructureFlagBitsKHR::eAllowOpacityMicromapUpdateEXT;
+
+        // (flags & rt::cluster::OperationFlags::NoOverlap)
+        // is used to populate noMoveOverlap on vk::ClusterAccelerationStructureMoveObjectsInputNV
+        
+        return operationFlags;
+    }
+
+    static void populateClusterOperationInputInfo(
+        const rt::cluster::OperationParams& params, 
+        const VulkanContext& context,
+        vk::ClusterAccelerationStructureInputInfoNV& inputInfo,
+        vk::ClusterAccelerationStructureMoveObjectsInputNV& moveInput,
+        vk::ClusterAccelerationStructureTriangleClusterInputNV& clusterInput,
+        vk::ClusterAccelerationStructureClustersBottomLevelInputNV& blasInput)
+    {
+        inputInfo.maxAccelerationStructureCount = params.maxArgCount;
+        inputInfo.flags = convertClusterOperationFlags(params.flags);
+        inputInfo.opType = convertClusterOperationType(params.type, context);
+        inputInfo.opMode = convertClusterOperationMode(params.mode, context);
+
+        // Set operation-specific parameters
+        switch (params.type)
+        {
+            case rt::cluster::OperationType::Move:
+            {
+                moveInput.type = convertClusterAccelerationStructureType(params.move.type);
+                moveInput.noMoveOverlap = (params.flags & rt::cluster::OperationFlags::NoOverlap) != 0;
+                moveInput.maxMovedBytes = params.move.maxBytes;
+                inputInfo.opInput.pMoveObjects = &moveInput;
+                break;
+            }
+
+            case rt::cluster::OperationType::ClasBuild:
+            case rt::cluster::OperationType::ClasBuildTemplates:
+            case rt::cluster::OperationType::ClasInstantiateTemplates:
+            {
+                clusterInput.vertexFormat = vk::Format(convertFormat(params.clas.vertexFormat));
+                clusterInput.maxGeometryIndexValue = params.clas.maxGeometryIndex;
+                clusterInput.maxClusterUniqueGeometryCount = params.clas.maxUniqueGeometryCount;
+                clusterInput.maxClusterTriangleCount = params.clas.maxTriangleCount;
+                clusterInput.maxClusterVertexCount = params.clas.maxVertexCount;
+                clusterInput.maxTotalTriangleCount = params.clas.maxTotalTriangleCount;
+                clusterInput.maxTotalVertexCount = params.clas.maxTotalVertexCount;
+                clusterInput.minPositionTruncateBitCount = params.clas.minPositionTruncateBitCount;
+                inputInfo.opInput.pTriangleClusters = &clusterInput;
+                break;
+            }
+
+            case rt::cluster::OperationType::BlasBuild:
+            {
+                blasInput.maxClusterCountPerAccelerationStructure = params.blas.maxClasPerBlasCount;
+                blasInput.maxTotalClusterCount = params.blas.maxTotalClasCount;
+                inputInfo.opInput.pClustersBottomLevel = &blasInput;
+                break;
+            }
+
+            default:
+                break;
+        }
+    }
+
+    rt::cluster::OperationSizeInfo Device::getClusterOperationSizeInfo(const rt::cluster::OperationParams& params)
+    {
+        rt::cluster::OperationSizeInfo info;
+
+        // Create Vulkan operation parameters
+        vk::ClusterAccelerationStructureInputInfoNV inputInfo = {};
+        vk::ClusterAccelerationStructureMoveObjectsInputNV moveInput = {};
+        vk::ClusterAccelerationStructureTriangleClusterInputNV clusterInput = {};
+        vk::ClusterAccelerationStructureClustersBottomLevelInputNV blasInput = {};
+
+        // Populate input info using helper function
+        populateClusterOperationInputInfo(params, m_Context, inputInfo, moveInput, clusterInput, blasInput);
+
+        // Get size info from Vulkan
+        auto vkSizeInfo = m_Context.device.getClusterAccelerationStructureBuildSizesNV(inputInfo);
+
+        // Convert Vulkan size info to NVRHI size info
+        info.resultMaxSizeInBytes = vkSizeInfo.accelerationStructureSize;
+        info.scratchSizeInBytes = vkSizeInfo.buildScratchSize;
+
+        return info;
     }
 
     bool Device::bindAccelStructMemory(rt::IAccelStruct* _as, IHeap* heap, uint64_t offset)
@@ -755,9 +895,112 @@ namespace nvrhi::vulkan
             m_CurrentCmdBuf->referencedResources.push_back(as);
     }
 
-    void CommandList::executeMultiIndirectClusterOperation(const rt::cluster::OperationDesc&)
+    void CommandList::executeMultiIndirectClusterOperation(const rt::cluster::OperationDesc& desc)
     {
-        utils::NotSupported();
+        // Create Vulkan operation info
+        vk::ClusterAccelerationStructureInputInfoNV inputInfo = {};
+        vk::ClusterAccelerationStructureMoveObjectsInputNV moveInput = {};
+        vk::ClusterAccelerationStructureTriangleClusterInputNV clusterInput = {};
+        vk::ClusterAccelerationStructureClustersBottomLevelInputNV blasInput = {};
+
+        // Populate input info using helper function
+        populateClusterOperationInputInfo(desc.params, m_Context, inputInfo, moveInput, clusterInput, blasInput);
+
+        // Set up buffer addresses
+        Buffer* indirectArgCountBuffer = checked_cast<Buffer*>(desc.inIndirectArgCountBuffer);
+        Buffer* indirectArgsBuffer = checked_cast<Buffer*>(desc.inIndirectArgsBuffer);
+        Buffer* inOutAddressesBuffer = checked_cast<Buffer*>(desc.inOutAddressesBuffer);
+        Buffer* outSizesBuffer = checked_cast<Buffer*>(desc.outSizesBuffer);
+        Buffer* outAccelerationStructuresBuffer = checked_cast<Buffer*>(desc.outAccelerationStructuresBuffer);
+
+        // Set up resource states and barriers
+        if (m_EnableAutomaticBarriers)
+        {
+            if (indirectArgsBuffer)
+                requireBufferState(indirectArgsBuffer, ResourceStates::ShaderResource);
+            if (indirectArgCountBuffer)
+                requireBufferState(indirectArgCountBuffer, ResourceStates::ShaderResource);
+            if (inOutAddressesBuffer)
+                requireBufferState(inOutAddressesBuffer, ResourceStates::UnorderedAccess);
+            if (outSizesBuffer)
+                requireBufferState(outSizesBuffer, ResourceStates::UnorderedAccess);
+            if (outAccelerationStructuresBuffer)
+                requireBufferState(outAccelerationStructuresBuffer, ResourceStates::AccelStructWrite);
+        }
+
+        // Track resources for liveness
+        if (indirectArgCountBuffer)
+            m_CurrentCmdBuf->referencedResources.push_back(indirectArgCountBuffer);
+        if (indirectArgsBuffer)
+            m_CurrentCmdBuf->referencedResources.push_back(indirectArgsBuffer);
+        if (inOutAddressesBuffer)
+            m_CurrentCmdBuf->referencedResources.push_back(inOutAddressesBuffer);
+        if (outSizesBuffer)
+            m_CurrentCmdBuf->referencedResources.push_back(outSizesBuffer);
+        if (outAccelerationStructuresBuffer)
+            m_CurrentCmdBuf->referencedResources.push_back(outAccelerationStructuresBuffer);
+
+        commitBarriers();
+
+        // Allocate scratch buffer
+        Buffer* scratchBuffer = nullptr;
+        uint64_t scratchOffset = 0;
+        uint64_t currentVersion = MakeVersion(m_CurrentCmdBuf->recordingID, m_CommandListParameters.queueType, false);
+
+        if (desc.scratchSizeInBytes > 0)
+        {
+            if (!m_ScratchManager->suballocateBuffer(desc.scratchSizeInBytes, &scratchBuffer, &scratchOffset, nullptr,
+                currentVersion, m_Context.nvClusterAccelerationStructureProperties.clusterScratchByteAlignment))
+            {
+                std::stringstream ss;
+                ss << "Couldn't suballocate a scratch buffer for cluster operation. "
+                    "The operation requires " << desc.scratchSizeInBytes << " bytes of scratch space.";
+
+                m_Context.error(ss.str());
+                return;
+            }
+        }
+
+        // Create commands info
+        vk::ClusterAccelerationStructureCommandsInfoNV commandsInfo = {};
+        commandsInfo.input = inputInfo;
+        commandsInfo.scratchData = scratchBuffer ? scratchBuffer->deviceAddress + scratchOffset : 0;
+        commandsInfo.dstImplicitData = outAccelerationStructuresBuffer ? outAccelerationStructuresBuffer->deviceAddress + desc.outAccelerationStructuresOffsetInBytes : 0;
+        
+        // Set up strided device address regions
+        if (inOutAddressesBuffer)
+        {
+            commandsInfo.dstAddressesArray
+                .setDeviceAddress(inOutAddressesBuffer->deviceAddress + desc.inOutAddressesOffsetInBytes)
+                .setStride(inOutAddressesBuffer->getDesc().structStride)
+                .setSize(inOutAddressesBuffer->getDesc().byteSize - desc.inOutAddressesOffsetInBytes);
+        }
+        
+        if (outSizesBuffer)
+        {
+            commandsInfo.dstSizesArray
+                .setDeviceAddress(outSizesBuffer->deviceAddress + desc.outSizesOffsetInBytes)
+                .setStride(outSizesBuffer->getDesc().structStride)
+                .setSize(outSizesBuffer->getDesc().byteSize - desc.outSizesOffsetInBytes);
+        }
+        
+        if (indirectArgsBuffer)
+        {
+            commandsInfo.srcInfosArray
+                .setDeviceAddress(indirectArgsBuffer->deviceAddress + desc.inIndirectArgsOffsetInBytes)
+                .setStride(indirectArgsBuffer->getDesc().structStride)
+                .setSize(indirectArgsBuffer->getDesc().byteSize - desc.inIndirectArgsOffsetInBytes);
+        }
+        
+        commandsInfo.srcInfosCount = indirectArgCountBuffer ? indirectArgCountBuffer->deviceAddress + desc.inIndirectArgCountOffsetInBytes : 0;
+
+        // vk::ClusterAccelerationStructureAddressResolutionFlagBitsNV is missing eNone bit
+        // nvapi has this as NVAPI_D3D12_RAYTRACING_MULTI_INDIRECT_CLUSTER_OPERATION_ADDRESS_RESOLUTION_FLAG_NONE
+        // so use 0 for now.
+        commandsInfo.addressResolutionFlags = vk::ClusterAccelerationStructureAddressResolutionFlagBitsNV(0);
+
+        // Execute the cluster operation
+        m_CurrentCmdBuf->cmdBuf.buildClusterAccelerationStructureIndirectNV(commandsInfo);
     }
 
     AccelStruct::~AccelStruct()
@@ -1175,13 +1418,21 @@ namespace nvrhi::vulkan
         // Create the pipeline object
 
         auto libraryInfo = vk::PipelineLibraryCreateInfoKHR();
-        
+
+        auto pipelineClusters = vk::RayTracingPipelineClusterAccelerationStructureCreateInfoNV()
+            .setAllowClusterAccelerationStructure(true);
+
         auto pipelineInfo = vk::RayTracingPipelineCreateInfoKHR()
             .setStages(shaderStages)
             .setGroups(shaderGroups)
             .setLayout(pso->pipelineLayout)
             .setMaxPipelineRayRecursionDepth(desc.maxRecursionDepth)
             .setPLibraryInfo(&libraryInfo);
+
+        if (m_Context.extensions.NV_cluster_acceleration_structure)
+        {
+            pipelineInfo.setPNext(&pipelineClusters);
+        }
 
         res = m_Context.device.createRayTracingPipelinesKHR(vk::DeferredOperationKHR(), m_Context.pipelineCache,
             1, &pipelineInfo,

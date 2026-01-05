@@ -132,10 +132,7 @@ MipMapGenPass::MipMapGenPass(
     layoutDesc.visibility = nvrhi::ShaderType::Compute;
     layoutDesc.bindings.push_back(nvrhi::BindingLayoutItem::VolatileConstantBuffer(0));
     layoutDesc.bindings.push_back(nvrhi::BindingLayoutItem::Texture_SRV(0));
-    for (uint mipLevel = 1; mipLevel <= NUM_LODS; ++mipLevel)
-    {   
-        layoutDesc.bindings.push_back(nvrhi::BindingLayoutItem::Texture_UAV(mipLevel - 1));
-    }
+    layoutDesc.bindings.push_back(nvrhi::BindingLayoutItem::Texture_UAV(0).setSize(NUM_LODS));
     m_BindingLayout = m_Device->createBindingLayout(layoutDesc);
 
     // BindingSets
@@ -155,9 +152,16 @@ MipMapGenPass::MipMapGenPass(
         for (uint mipLevel = 1; mipLevel <= NUM_LODS; ++mipLevel)
         {   // output UAVs start after the mip-level UAV that was computed last
             if (i * NUM_LODS + mipLevel < nmipLevels)
-                setDesc.bindings.push_back(nvrhi::BindingSetItem::Texture_UAV(mipLevel - 1, m_Texture, nvrhi::Format::UNKNOWN, nvrhi::TextureSubresourceSet(i*NUM_LODS + mipLevel, 1, 0, 1)));
+            {
+                setDesc.bindings.push_back(nvrhi::BindingSetItem::Texture_UAV(0, m_Texture)
+                    .setArrayElement(mipLevel - 1)
+                    .setSubresources(nvrhi::TextureSubresourceSet(i*NUM_LODS + mipLevel, 1, 0, 1)));
+            }
             else
-                setDesc.bindings.push_back(nvrhi::BindingSetItem::Texture_UAV(mipLevel - 1, m_NullTextures->lod[mipLevel-1]));
+            {
+                setDesc.bindings.push_back(nvrhi::BindingSetItem::Texture_UAV(0, m_NullTextures->lod[mipLevel-1])
+                    .setArrayElement(mipLevel - 1));
+            }
         }
         set = m_Device->createBindingSet(setDesc, m_BindingLayout);
     }

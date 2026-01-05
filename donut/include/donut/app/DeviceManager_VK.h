@@ -206,6 +206,7 @@ protected:
             VK_KHR_SWAPCHAIN_MUTABLE_FORMAT_EXTENSION_NAME,
             VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME,
             VK_NV_MESH_SHADER_EXTENSION_NAME,
+            VK_EXT_MUTABLE_DESCRIPTOR_TYPE_EXTENSION_NAME,
 #if DONUT_WITH_AFTERMATH
             VK_NV_DEVICE_DIAGNOSTIC_CHECKPOINTS_EXTENSION_NAME,
             VK_NV_DEVICE_DIAGNOSTICS_CONFIG_EXTENSION_NAME,
@@ -218,7 +219,8 @@ protected:
         VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
         VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME,
         VK_KHR_RAY_QUERY_EXTENSION_NAME,
-        VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME
+        VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
+        VK_NV_CLUSTER_ACCELERATION_STRUCTURE_EXTENSION_NAME
     };
 
     std::string m_RendererString;
@@ -259,7 +261,6 @@ protected:
     std::vector<vk::Semaphore> m_AcquireSemaphores;
     std::vector<vk::Semaphore> m_PresentSemaphores;
     uint32_t m_AcquireSemaphoreIndex = 0;
-    uint32_t m_PresentSemaphoreIndex = 0;
 
     std::queue<nvrhi::EventQueryHandle> m_FramesInFlight;
     std::vector<nvrhi::EventQueryHandle> m_QueryPool;

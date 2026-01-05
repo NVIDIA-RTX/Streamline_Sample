@@ -850,13 +850,6 @@ nvrhi::BufferHandle CreateMaterialConstantBuffer(nvrhi::IDevice* device, const s
     return device->createBuffer(bufferDesc);
 }
 
-void UpdateMaterialConstantBuffer(nvrhi::ICommandList* commandList, const Material* material, nvrhi::IBuffer* buffer)
-{
-    MaterialConstants materialConstants = {};
-    material->FillConstantBuffer(materialConstants);
-
-    commandList->writeBuffer(buffer, &materialConstants, sizeof(materialConstants));
-}
 
 inline void AppendBufferRange(nvrhi::BufferRange& range, size_t size, uint64_t& currentBufferSize)
 {
@@ -1217,7 +1210,7 @@ void Scene::WriteInstanceBuffer(nvrhi::ICommandList* commandList) const
 
 void Scene::UpdateMaterial(const std::shared_ptr<Material>& material)
 {
-    material->FillConstantBuffer(m_Resources->materialData[material->materialID]);
+    material->FillConstantBuffer(m_Resources->materialData[material->materialID], m_UseResourceDescriptorHeapBindless);
 }
 
 void Scene::UpdateGeometry(const std::shared_ptr<MeshInfo>& mesh)

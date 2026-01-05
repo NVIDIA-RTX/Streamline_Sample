@@ -78,6 +78,9 @@ namespace nvrhi::vulkan
         // Indicates if VkPhysicalDeviceVulkan12Features::bufferDeviceAddress was set to 'true' at device creation time
         bool bufferDeviceAddressSupported = false;
         bool aftermathEnabled = false;
+        bool logBufferLifetime = false;
+
+        std::string vulkanLibraryName; // if empty, use default
     };
 
     NVRHI_API DeviceHandle createDevice(const DeviceDesc& desc);

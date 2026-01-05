@@ -88,6 +88,7 @@ endif()
 
 donut_compile_shaders_all_platforms(
 	TARGET donut_shaders
+	PROJECT_NAME "Donut"
 	CONFIG ${CMAKE_CURRENT_LIST_DIR}/DonutShaders.cfg
 	FOLDER Donut
 	OUTPUT_BASE ${output_base}

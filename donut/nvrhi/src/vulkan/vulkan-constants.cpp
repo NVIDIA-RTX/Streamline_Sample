@@ -329,6 +329,14 @@ namespace nvrhi::vulkan
             vk::PipelineStageFlagBits2::eMicromapBuildEXT,
             vk::AccessFlagBits2::eShaderRead,
             vk::ImageLayout::eUndefined },
+        { ResourceStates::ConvertCoopVecMatrixInput,
+            vk::PipelineStageFlagBits2::eConvertCooperativeVectorMatrixNV,
+            vk::AccessFlagBits2::eTransferRead,
+            vk::ImageLayout::eUndefined },
+        { ResourceStates::ConvertCoopVecMatrixOutput,
+            vk::PipelineStageFlagBits2::eConvertCooperativeVectorMatrixNV,
+            vk::AccessFlagBits2::eTransferWrite,
+            vk::ImageLayout::eUndefined },
     };
 
     ResourceStateMappingInternal convertResourceStateInternal(ResourceStates state)
@@ -690,7 +698,7 @@ namespace nvrhi::vulkan
             case BlendOp::Add:
                 return vk::BlendOp::eAdd;
 
-            case BlendOp::Subrtact:
+            case BlendOp::Subtract:
                 return vk::BlendOp::eSubtract;
 
             case BlendOp::ReverseSubtract:
@@ -821,4 +829,149 @@ namespace nvrhi::vulkan
         }
     }
 
+    vk::DescriptorType convertResourceType(ResourceType type)
+    {
+        switch (type)
+        {
+        case ResourceType::Texture_SRV:
+            return vk::DescriptorType::eSampledImage;
+
+        case ResourceType::Texture_UAV:
+            return vk::DescriptorType::eStorageImage;
+
+        case ResourceType::TypedBuffer_SRV:
+            return vk::DescriptorType::eUniformTexelBuffer;
+
+        case ResourceType::TypedBuffer_UAV:
+            return vk::DescriptorType::eStorageTexelBuffer;
+
+        case ResourceType::StructuredBuffer_SRV:
+        case ResourceType::StructuredBuffer_UAV:
+        case ResourceType::RawBuffer_SRV:
+        case ResourceType::RawBuffer_UAV:
+            return vk::DescriptorType::eStorageBuffer;
+
+        case ResourceType::ConstantBuffer:
+            return vk::DescriptorType::eUniformBuffer;
+
+        case ResourceType::VolatileConstantBuffer:
+            return vk::DescriptorType::eUniformBufferDynamic;
+
+        case ResourceType::Sampler:
+            return vk::DescriptorType::eSampler;
+
+        case ResourceType::PushConstants:
+            return vk::DescriptorType::eUniformBuffer; // not really though, there are no descriptors for push constants
+
+        case ResourceType::RayTracingAccelStruct:
+            return vk::DescriptorType::eAccelerationStructureKHR;
+            break;
+
+        default:
+            utils::InvalidEnum();
+            return vk::DescriptorType(0);
+        }
+    }
+
+    vk::ComponentTypeKHR convertCoopVecDataType(coopvec::DataType type)
+    {
+        switch (type)
+        {
+        case coopvec::DataType::UInt8:
+            return vk::ComponentTypeKHR::eUint8;
+        case coopvec::DataType::SInt8:
+            return vk::ComponentTypeKHR::eSint8;
+        case coopvec::DataType::UInt8Packed:
+            return vk::ComponentTypeKHR::eUint8PackedNV;
+        case coopvec::DataType::SInt8Packed:
+            return vk::ComponentTypeKHR::eSint8PackedNV;
+        case coopvec::DataType::UInt16:
+            return vk::ComponentTypeKHR::eUint16;
+        case coopvec::DataType::SInt16:
+            return vk::ComponentTypeKHR::eSint16;
+        case coopvec::DataType::UInt32:
+            return vk::ComponentTypeKHR::eUint32;
+        case coopvec::DataType::SInt32:
+            return vk::ComponentTypeKHR::eSint32;
+        case coopvec::DataType::UInt64:
+            return vk::ComponentTypeKHR::eUint64;
+        case coopvec::DataType::SInt64:
+            return vk::ComponentTypeKHR::eSint64;
+        case coopvec::DataType::FloatE4M3:
+            return vk::ComponentTypeKHR::eFloatE4M3NV;
+        case coopvec::DataType::FloatE5M2:
+            return vk::ComponentTypeKHR::eFloatE5M2NV;
+        case coopvec::DataType::Float16:
+            return vk::ComponentTypeKHR::eFloat16;
+        case coopvec::DataType::BFloat16:
+            return vk::ComponentTypeKHR::eBfloat16;
+        case coopvec::DataType::Float32:
+            return vk::ComponentTypeKHR::eFloat32;
+        case coopvec::DataType::Float64:
+            return vk::ComponentTypeKHR::eFloat64;
+        default:
+            utils::InvalidEnum();
+            return vk::ComponentTypeKHR::eFloat32;
+        }
+    }
+
+    coopvec::DataType convertCoopVecDataType(vk::ComponentTypeKHR type)
+    {
+        switch (type)
+        {
+        case vk::ComponentTypeKHR::eUint8:
+            return coopvec::DataType::UInt8;
+        case vk::ComponentTypeKHR::eSint8:
+            return coopvec::DataType::SInt8;
+        case vk::ComponentTypeKHR::eUint8PackedNV:
+            return coopvec::DataType::UInt8Packed;
+        case vk::ComponentTypeKHR::eSint8PackedNV:
+            return coopvec::DataType::SInt8Packed;
+        case vk::ComponentTypeKHR::eUint16:
+            return coopvec::DataType::UInt16;
+        case vk::ComponentTypeKHR::eSint16:
+            return coopvec::DataType::SInt16;
+        case vk::ComponentTypeKHR::eUint32:
+            return coopvec::DataType::UInt32;
+        case vk::ComponentTypeKHR::eSint32:
+            return coopvec::DataType::SInt32;
+        case vk::ComponentTypeKHR::eUint64:
+            return coopvec::DataType::UInt64;
+        case vk::ComponentTypeKHR::eSint64:
+            return coopvec::DataType::SInt64;
+        case vk::ComponentTypeKHR::eFloatE4M3NV:
+            return coopvec::DataType::FloatE4M3;
+        case vk::ComponentTypeKHR::eFloatE5M2NV:
+            return coopvec::DataType::FloatE5M2;
+        case vk::ComponentTypeKHR::eFloat16:
+            return coopvec::DataType::Float16;
+        case vk::ComponentTypeKHR::eBfloat16:
+            return coopvec::DataType::BFloat16;
+        case vk::ComponentTypeKHR::eFloat32:
+            return coopvec::DataType::Float32;
+        case vk::ComponentTypeKHR::eFloat64:
+            return coopvec::DataType::Float64;
+        default:
+            utils::InvalidEnum();
+            return coopvec::DataType::Float32;
+        }
+    }
+
+    vk::CooperativeVectorMatrixLayoutNV convertCoopVecMatrixLayout(coopvec::MatrixLayout layout)
+    {
+        switch (layout)
+        {
+        case coopvec::MatrixLayout::RowMajor:
+            return vk::CooperativeVectorMatrixLayoutNV::eRowMajor;
+        case coopvec::MatrixLayout::ColumnMajor:
+            return vk::CooperativeVectorMatrixLayoutNV::eColumnMajor;
+        case coopvec::MatrixLayout::InferencingOptimal:
+            return vk::CooperativeVectorMatrixLayoutNV::eInferencingOptimal;
+        case coopvec::MatrixLayout::TrainingOptimal:
+            return vk::CooperativeVectorMatrixLayoutNV::eTrainingOptimal;
+        default:
+            utils::InvalidEnum();
+            return vk::CooperativeVectorMatrixLayoutNV::eRowMajor;
+        }
+    }
 } // namespace nvrhi::vulkan

@@ -179,8 +179,8 @@ enum class DLSSPreset
     ePresetI,   // reverts to default, not recommended to use
     ePresetJ,
     ePresetK,
-    ePresetL,   // reverts to default, not recommended to use
-    ePresetM,   // reverts to default, not recommended to use
+    ePresetL,
+    ePresetM,
     ePresetN,   // reverts to default, not recommended to use
     ePresetO,   // reverts to default, not recommended to use
 };

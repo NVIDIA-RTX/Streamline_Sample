@@ -64,16 +64,7 @@ cbuffer c_MipMapgen : register(b0)
     MipmmapGenConstants g_MipMapGen;
 };
 
-#ifdef TARGET_VULKAN
-// Note: use an unsized array of UAVs on Vulkan to work around validation layer errors.
-// DXC maps this to an array of descriptors in one binding, like u0.0, u0.1, ... instead of u0, u1, ... which NVRHI doesn't support.
-// Using different bindings for array elements somehow works, and that's what NVRHI's BindingSets do, so just silence the validation layer by using dynamic array indexing.
-// Validation errors look like this: "Shader expects at least 4 descriptors for binding 0.384 but only 1 provided"
-// Ideally, this should be fixed by adding support for descriptor arrays in NVRHI, other than a DescriptorTable.
-RWTexture2D<VALUE_TYPE> u_output[] : register(u0);
-#else
 RWTexture2D<VALUE_TYPE> u_output[NUM_LODS] : register(u0);
-#endif
 Texture2D<VALUE_TYPE> t_input : register(t0);
 
 groupshared VALUE_TYPE s_ReductionData[GROUP_SIZE][GROUP_SIZE];

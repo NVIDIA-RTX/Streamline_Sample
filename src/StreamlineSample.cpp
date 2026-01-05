@@ -35,6 +35,7 @@
 #include "StreamlineSample.h"
 #include <sstream>
 #include <thread>
+#include <GLFW/glfw3.h>
 
 #ifdef STREAMLINE_FEATURE_DLSS_RR
 #include "lighting_cb.h"
@@ -287,16 +288,16 @@ bool StreamlineSample::CreateRayTracingPipeline(engine::ShaderFactory& shaderFac
     globalBindingLayoutDesc.bindingOffsets.setShaderResourceOffset(200);
 
     globalBindingLayoutDesc.bindings = {
-        { 0, nvrhi::ResourceType::VolatileConstantBuffer },
-        { 0, nvrhi::ResourceType::RayTracingAccelStruct },
-        { 1, nvrhi::ResourceType::Texture_SRV },
-        { 2, nvrhi::ResourceType::Texture_SRV },
-        { 3, nvrhi::ResourceType::Texture_SRV },
-        { 4, nvrhi::ResourceType::Texture_SRV },
-        { 5, nvrhi::ResourceType::Texture_SRV },
-        { 0, nvrhi::ResourceType::Texture_UAV },
-        { 1, nvrhi::ResourceType::Texture_UAV },
-        { 0, nvrhi::ResourceType::Sampler }
+        nvrhi::BindingLayoutItem::VolatileConstantBuffer(0),
+        nvrhi::BindingLayoutItem::RayTracingAccelStruct(0),
+        nvrhi::BindingLayoutItem::Texture_SRV(1),
+        nvrhi::BindingLayoutItem::Texture_SRV(2),
+        nvrhi::BindingLayoutItem::Texture_SRV(3),
+        nvrhi::BindingLayoutItem::Texture_SRV(4),
+        nvrhi::BindingLayoutItem::Texture_SRV(5),
+        nvrhi::BindingLayoutItem::Texture_UAV(0),
+        nvrhi::BindingLayoutItem::Texture_UAV(1),
+        nvrhi::BindingLayoutItem::Sampler(0),
     };
 
     m_GlobalBindingLayout = GetDevice()->createBindingLayout(globalBindingLayoutDesc);
@@ -308,14 +309,14 @@ bool StreamlineSample::CreateRayTracingPipeline(engine::ShaderFactory& shaderFac
         localBindingLayoutDesc.registerSpace = 1;
         localBindingLayoutDesc.registerSpaceIsDescriptorSet = true;
         localBindingLayoutDesc.bindings = {
-            { 0, nvrhi::ResourceType::TypedBuffer_SRV },
-            { 1, nvrhi::ResourceType::TypedBuffer_SRV },
-            { 2, nvrhi::ResourceType::TypedBuffer_SRV },
-            { 3, nvrhi::ResourceType::Texture_SRV },
-            { 4, nvrhi::ResourceType::Texture_SRV },
-            { 5, nvrhi::ResourceType::Texture_SRV },
-            { 6, nvrhi::ResourceType::Texture_SRV },
-            { 0, nvrhi::ResourceType::ConstantBuffer }
+            nvrhi::BindingLayoutItem::TypedBuffer_SRV(0),
+            nvrhi::BindingLayoutItem::TypedBuffer_SRV(1),
+            nvrhi::BindingLayoutItem::TypedBuffer_SRV(2),
+            nvrhi::BindingLayoutItem::Texture_SRV(3),
+            nvrhi::BindingLayoutItem::Texture_SRV(4),
+            nvrhi::BindingLayoutItem::Texture_SRV(5),
+            nvrhi::BindingLayoutItem::Texture_SRV(6),
+            nvrhi::BindingLayoutItem::ConstantBuffer(0),
         };
 
         m_LocalBindingLayout = GetDevice()->createBindingLayout(localBindingLayoutDesc);
@@ -1565,6 +1566,11 @@ void StreamlineSample::SetCurrentSceneName(const std::string& sceneName)
 
 bool StreamlineSample::KeyboardUpdate(int key, int scancode, int action, int mods)
 {
+    // Handle Alt+Enter for fullscreen toggle
+    if (key == GLFW_KEY_ENTER && action == GLFW_PRESS && (mods & GLFW_MOD_ALT)) {
+        ToggleFullscreen();
+        return true;
+    }
 
     if (key == GLFW_KEY_F13 && action == GLFW_PRESS) {
         // As GLFW abstracts away from Windows messages
@@ -1601,6 +1607,38 @@ bool StreamlineSample::MouseScrollUpdate(double xoffset, double yoffset)
 {
     m_FirstPersonCamera.MouseScrollUpdate(xoffset, yoffset);
     return true;
+}
+
+void StreamlineSample::ToggleFullscreen()
+{
+    GLFWwindow* window = GetDeviceManager()->GetWindow();
+    GLFWmonitor* monitor = glfwGetWindowMonitor(window);
+    
+    if (monitor == nullptr)
+    {
+        // Currently in windowed mode, switch to fullscreen
+        GLFWmonitor* primaryMonitor = glfwGetPrimaryMonitor();
+        const GLFWvidmode* mode = glfwGetVideoMode(primaryMonitor);
+        
+        // Store current windowed position and size before going fullscreen
+        static int windowedX, windowedY, windowedWidth, windowedHeight;
+        glfwGetWindowPos(window, &windowedX, &windowedY);
+        glfwGetWindowSize(window, &windowedWidth, &windowedHeight);
+        
+        donut::log::info("Switching to fullscreen mode (%dx%d)", mode->width, mode->height);
+        glfwSetWindowMonitor(window, primaryMonitor, 0, 0, mode->width, mode->height, mode->refreshRate);
+    }
+    else
+    {
+        // Currently in fullscreen mode, switch to windowed
+        static int windowedX = 100, windowedY = 100, windowedWidth = 1920, windowedHeight = 1080;
+        
+        donut::log::info("Switching to windowed mode (%dx%d)", windowedWidth, windowedHeight);
+        glfwSetWindowMonitor(window, nullptr, windowedX, windowedY, windowedWidth, windowedHeight, GLFW_DONT_CARE);
+    }
+    
+    // Note: The DeviceManager should handle the swap chain resize automatically
+    // through its window resize callback system
 }
 
 void StreamlineSample::Animate(float fElapsedTimeSeconds)

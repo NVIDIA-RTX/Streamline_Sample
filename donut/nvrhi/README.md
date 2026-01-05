@@ -22,9 +22,17 @@ NVRHI is used in several NVIDIA SDKs:
 
 - [Adaptive and Variable-Rate Shading SDK](https://github.com/NVIDIAGameWorks/nas-sample)
 - [Donut Framework](https://github.com/NVIDIA-RTX/Donut) and its [Samples](https://github.com/NVIDIA-RTX/Donut-Samples)
-- [Opacity Micro-Map SDK](https://github.com/NVIDIAGameWorks/Opacity-MicroMap-SDK)
-- [Path Tracing SDK](https://github.com/NVIDIAGameWorks/Path-Tracing-SDK)
-- [RTXDI SDK](https://github.com/NVIDIAGameWorks/RTXDI)
+- [In-Game Inference (NVIGI) Sample](https://github.com/NVIDIA-RTX/NVIGI-3d-Sample)
+- [Opacity Micro-Map SDK](https://github.com/NVIDIA-RTX/OMM)
+- [RTX Character Rendering SDK](https://github.com/NVIDIA-RTX/RTXCR)
+- [RTX Mega Geometry SDK](https://github.com/NVIDIA-RTX/RTXMG)
+- [RTX Neural Shading SDK](https://github.com/NVIDIA-RTX/RTXNS)
+- [RTX Neural Texture Compression SDK](https://github.com/NVIDIA-RTX/RTXNTC)
+- [RTX Path Tracing SDK](https://github.com/NVIDIA-RTX/RTXPT)
+- [RTX Texture Filtering SDK](https://github.com/NVIDIA-RTX/RTXTF)
+- [RTX Texture Streaming SDK](https://github.com/NVIDIA-RTX/RTXTS)
+- [RTXDI SDK](https://github.com/NVIDIA-RTX/RTXDI)
+- [RTXGI SDK](https://github.com/NVIDIA-RTX/RTXGI)
 
 Notable third-party projects using NVRHI:
 
@@ -79,6 +87,8 @@ To enable NVAPI support, extract the NVAPI SDK into the `nvapi` subfolder of you
 
 The following extensions are supported:
 
+- Cluster Level Acceleration Structures (DX12)
+- Linear Swept Spheres (DX12, Blackwell+)
 - Opacity Micro-Maps (DX12, Ada+)
 - Shader Execution Reordering on DX12 (DX12, Ada+)
 - Single Pass Stereo (Pascal+)

@@ -21,6 +21,7 @@
 */
 
 #include <nvrhi/nvrhi.h>
+#include <nvrhi/utils.h>
 #include <cmath>
 
 namespace nvrhi
@@ -193,6 +194,60 @@ namespace nvrhi
         {
             setTextureState(desc.depthAttachment.texture, desc.depthAttachment.subresources,
                 desc.depthAttachment.isReadOnly ? ResourceStates::DepthRead : ResourceStates::DepthWrite);
+        }
+    }
+    
+    size_t coopvec::getDataTypeSize(coopvec::DataType type)
+    {
+        switch (type)
+        {
+        case coopvec::DataType::UInt8:
+        case coopvec::DataType::SInt8:
+            return 1;
+        case coopvec::DataType::UInt8Packed:
+        case coopvec::DataType::SInt8Packed:
+            // Not sure if this is correct or even relevant because packed types
+            // cannot be used in matrices accessible from the host side.
+            return 1;
+        case coopvec::DataType::UInt16:
+        case coopvec::DataType::SInt16:
+            return 2;
+        case coopvec::DataType::UInt32:
+        case coopvec::DataType::SInt32:
+            return 4;
+        case coopvec::DataType::UInt64:
+        case coopvec::DataType::SInt64:
+            return 8;
+        case coopvec::DataType::FloatE4M3:
+        case coopvec::DataType::FloatE5M2:
+            return 1;
+        case coopvec::DataType::Float16:
+        case coopvec::DataType::BFloat16:
+            return 2;
+        case coopvec::DataType::Float32:
+            return 4;
+        case coopvec::DataType::Float64:
+            return 8;
+        default:
+            utils::InvalidEnum();
+            return 0;
+        }
+    }
+
+    size_t coopvec::getOptimalMatrixStride(coopvec::DataType type, coopvec::MatrixLayout layout, uint32_t rows, uint32_t columns)
+    {
+        size_t const dataTypeSize = coopvec::getDataTypeSize(type);
+        
+        switch (layout)
+        {
+        case coopvec::MatrixLayout::RowMajor:
+            return dataTypeSize * columns;
+            break;
+        case coopvec::MatrixLayout::ColumnMajor:
+            return dataTypeSize * rows;
+            break;
+        default:
+            return 0;
         }
     }
 

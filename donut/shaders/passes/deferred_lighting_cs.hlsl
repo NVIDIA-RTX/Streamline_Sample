@@ -26,6 +26,7 @@
 #include <donut/shaders/lighting.hlsli>
 #include <donut/shaders/shadows.hlsli>
 #include <donut/shaders/deferred_lighting_cb.h>
+#include <donut/shaders/binding_helpers.hlsli>
 
 cbuffer c_Deferred : register(b0)
 {
@@ -53,7 +54,7 @@ Texture2D t_IndirectSpecular : register(t15);
 Texture2D t_ShadowBuffer : register(t16);
 Texture2D t_AmbientOcclusion : register(t17);
 
-RWTexture2D<float4> u_Output : register(u0);
+VK_IMAGE_FORMAT("rgba16f") RWTexture2D<float4> u_Output : register(u0);
 
 float GetRandom(float2 pos)
 {

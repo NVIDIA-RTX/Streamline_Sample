@@ -28,6 +28,7 @@
 #define VK_PUSH_CONSTANT [[vk::push_constant]]
 #define VK_BINDING(reg,dset) [[vk::binding(reg,dset)]]
 #define VK_DESCRIPTOR_SET(dset) ,space##dset
+#define VK_IMAGE_FORMAT(format) [[vk::image_format(format)]]
 
 // To use dual-source blending on Vulkan, a pixel shader must specify the same Location but different Index
 // decorations for two outputs. In HLSL, that can only be achieved with explicit attributes.
@@ -35,13 +36,20 @@
 #define VK_LOCATION(loc) [[vk::location(loc)]]
 #define VK_LOCATION_INDEX(loc,idx) [[vk::location(loc)]] [[vk::index(idx)]]
 
+// Allows RWTexture2D<float4> to map to any compatible type
+// see https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#formats-without-shader-storage-format
+// shaderStorageImageWriteWithoutFormat and shaderStorageImageReadWithoutFormat 
+#define VK_IMAGE_FORMAT_UNKNOWN [[vk::image_format("unknown")]]
+
 #else
 
 #define VK_PUSH_CONSTANT
 #define VK_BINDING(reg,dset) 
 #define VK_DESCRIPTOR_SET(dset)
+#define VK_IMAGE_FORMAT(format)
 #define VK_LOCATION(loc)
 #define VK_LOCATION_INDEX(loc,idx)
+#define VK_IMAGE_FORMAT_UNKNOWN
 
 #endif
 

@@ -37,6 +37,11 @@ namespace Json
     class Value;
 }
 
+namespace donut::vfs
+{
+    class IBlob;
+}
+
 namespace donut::engine
 {
     enum class TextureAlphaMode
@@ -48,6 +53,71 @@ namespace donut::engine
         CUSTOM = 4,
     };
 
+    // Contains data for a buffer or an image provided inside a glTF container.
+    // It can be from a Data URI (decoded) or from a buffer view.
+    struct GltfInlineData
+    {
+        std::shared_ptr<vfs::IBlob> buffer;
+
+        // Object name from glTF, if specified.
+        // Otherwise, generated as "AssetName.gltf[index]"
+        std::string name;
+
+        std::string mimeType;
+    };
+
+    // Contains either a file path for a resource referenced in a glTF asset,
+    // or an inline data buffer from the same asset.
+    struct FilePathOrInlineData
+    {
+        // Absolute path for an image file
+        std::string path;
+
+        // Data for the image provided in the glTF container
+        std::shared_ptr<GltfInlineData> data;
+
+        // Implicit conversion to bool, returns true if there is either a path or a data buffer
+        operator bool() const
+        {
+            return !path.empty() || data != nullptr;
+        }
+
+        bool operator==(FilePathOrInlineData const& other) const
+        {
+            return path == other.path && data == other.data;
+        }
+        
+        bool operator!=(FilePathOrInlineData const& other) const
+        {
+            return !(*this == other);
+        }
+
+        std::string const& ToString() const
+        {
+            return data ? data->name : path;
+        }
+    };
+
+    // Describes a swizzle operation that is used to derive a texture view from a potentially multichannel image.
+    // Donut doesn't support multichannel image operations, and swizzle implementatoin is left up to applications.
+    struct TextureSwizzle
+    {
+        // Image to extract channels from
+        FilePathOrInlineData source;
+
+        // Number of valid channels in the 'channels' array
+        int numChannels = 0;
+
+        // Indices of channels from the multichannel image to map to the texture's R, G, B, A channels.
+        // A channel index can be -1, which indicates that arbitrary data may be placed there.
+        std::array<int, 4> channels;
+
+        TextureSwizzle()
+        {
+            channels.fill(-1);
+        }
+    };
+
     struct LoadedTexture
     {
         nvrhi::TextureHandle texture;
@@ -56,6 +126,11 @@ namespace donut::engine
         DescriptorHandle bindlessDescriptor;
         std::string path;
         std::string mimeType;
+
+        // Options to constuct the texture from a multichannel image, as provided by the glTF asset
+        // through the NV_texture_swizzle extension. Applications should choose one of the options that
+        // they're compatible with, or fallback to the regular texture.
+        std::vector<TextureSwizzle> swizzleOptions;
     };
 
     enum class VertexAttribute
@@ -181,7 +256,7 @@ namespace donut::engine
         bool dirty = true; // set this to true to make Scene update the material data
 
         virtual ~Material() = default;
-        void FillConstantBuffer(struct MaterialConstants& constants) const;
+        void FillConstantBuffer(struct MaterialConstants& constants, bool useResourceDescriptorHeapBindless = false) const;
         bool SetProperty(const std::string& name, const dm::float4& value);
     };
 

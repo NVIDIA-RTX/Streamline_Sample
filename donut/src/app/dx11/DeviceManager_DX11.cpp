@@ -147,6 +147,10 @@ void DeviceManager_DX11::ReportLiveObjects()
 
 bool DeviceManager_DX11::CreateInstanceInternal()
 {
+#if DONUT_WITH_STREAMLINE
+    StreamlineIntegration::Get().InitializePreDevice(nvrhi::GraphicsAPI::D3D11, m_DeviceParams.streamlineAppId, m_DeviceParams.checkStreamlineSignature, m_DeviceParams.enableStreamlineLog);
+#endif
+
     if (!m_DxgiFactory)
     {
         HRESULT hres = CreateDXGIFactory1(IID_PPV_ARGS(&m_DxgiFactory));
@@ -199,17 +203,12 @@ bool DeviceManager_DX11::EnumerateAdapters(std::vector<AdapterInfo>& outAdapters
 
 bool DeviceManager_DX11::CreateDevice()
 {
-#if DONUT_WITH_STREAMLINE
-    const bool kCheckSig = true;
-    StreamlineIntegration::Get().InitializePreDevice(nvrhi::GraphicsAPI::D3D11, m_DeviceParams.streamlineAppId, kCheckSig, m_DeviceParams.enableStreamlineLog);
-#endif
-
     int adapterIndex = m_DeviceParams.adapterIndex;
 
 #if DONUT_WITH_STREAMLINE
     // Auto select best adapter for streamline features
     if (adapterIndex < 0)
-        adapterIndex = StreamlineIntegration::Get().FindBestAdapter();
+        adapterIndex = StreamlineIntegration::Get().FindBestAdapterDX();
 #endif
     if (adapterIndex < 0)
         adapterIndex = 0;
@@ -251,6 +250,9 @@ bool DeviceManager_DX11::CreateDevice()
     {
         return false;
     }
+#if DONUT_WITH_STREAMLINE
+    StreamlineIntegration::Get().SetD3DDevice(m_Device);
+#endif
 
     nvrhi::d3d11::DeviceDesc deviceDesc;
     deviceDesc.messageCallback = &DefaultMessageCallback::GetInstance();

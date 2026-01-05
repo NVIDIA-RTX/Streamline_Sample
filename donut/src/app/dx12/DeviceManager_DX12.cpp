@@ -137,6 +137,10 @@ void DeviceManager_DX12::ReportLiveObjects()
 
 bool DeviceManager_DX12::CreateInstanceInternal()
 {
+#if DONUT_WITH_STREAMLINE
+    StreamlineIntegration::Get().InitializePreDevice(nvrhi::GraphicsAPI::D3D12, m_DeviceParams.streamlineAppId, m_DeviceParams.checkStreamlineSignature, m_DeviceParams.enableStreamlineLog);
+#endif
+
     if (!m_DxgiFactory2)
     {
         HRESULT hres = CreateDXGIFactory2(m_DeviceParams.enableDebugRuntime ? DXGI_CREATE_FACTORY_DEBUG : 0, IID_PPV_ARGS(&m_DxgiFactory2));
@@ -189,11 +193,6 @@ bool DeviceManager_DX12::EnumerateAdapters(std::vector<AdapterInfo>& outAdapters
 
 bool DeviceManager_DX12::CreateDevice()
 {
-#if DONUT_WITH_STREAMLINE
-    const bool kCheckSig = true;
-    StreamlineIntegration::Get().InitializePreDevice(nvrhi::GraphicsAPI::D3D12, m_DeviceParams.streamlineAppId, kCheckSig, m_DeviceParams.enableStreamlineLog);
-#endif
-
     if (m_DeviceParams.enableDebugRuntime)
     {
         RefCountPtr<ID3D12Debug> pDebug;
@@ -221,7 +220,7 @@ bool DeviceManager_DX12::CreateDevice()
 #if DONUT_WITH_STREAMLINE
     // Auto select best adapter for streamline features
     if (adapterIndex < 0)
-        adapterIndex = StreamlineIntegration::Get().FindBestAdapter();
+        adapterIndex = StreamlineIntegration::Get().FindBestAdapterDX();
 #endif
 
     if (adapterIndex < 0)
@@ -256,6 +255,9 @@ bool DeviceManager_DX12::CreateDevice()
         donut::log::error("D3D12CreateDevice failed, error code = 0x%08x", hr);
         return false;
     }
+#if DONUT_WITH_STREAMLINE
+    StreamlineIntegration::Get().SetD3DDevice(m_Device12);
+#endif
 
     if (m_DeviceParams.enableDebugRuntime)
     {
@@ -275,6 +277,7 @@ bool DeviceManager_DX12::CreateDevice()
                 D3D12_MESSAGE_ID_CLEARDEPTHSTENCILVIEW_MISMATCHINGCLEARVALUE,
                 D3D12_MESSAGE_ID_CLEARRENDERTARGETVIEW_MISMATCHINGCLEARVALUE,
                 D3D12_MESSAGE_ID_COMMAND_LIST_STATIC_DESCRIPTOR_RESOURCE_DIMENSION_MISMATCH, // descriptor validation doesn't understand acceleration structures
+                D3D12_MESSAGE_ID_CREATERESOURCE_STATE_IGNORED, // NGX currently generates benign resource creation warnings
             };
 
             D3D12_INFO_QUEUE_FILTER filter = {};

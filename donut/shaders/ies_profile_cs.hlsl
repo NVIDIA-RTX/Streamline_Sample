@@ -20,8 +20,10 @@
 * DEALINGS IN THE SOFTWARE.
 */
 
+#include <donut/shaders/binding_helpers.hlsli>
+
 Buffer<float> t_IesData : register(t0);
-RWTexture2D<float> u_OutputTexture : register(u0);
+VK_IMAGE_FORMAT("r16f") RWTexture2D<float> u_OutputTexture : register(u0);
 
 float FindAngleIndex(float angle, int offset, int count)
 {

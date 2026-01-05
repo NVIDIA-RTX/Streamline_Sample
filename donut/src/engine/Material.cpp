@@ -27,13 +27,18 @@ using namespace donut::math;
 
 namespace donut::engine
 {
-    static int GetBindlessTextureIndex(const std::shared_ptr<LoadedTexture>& texture)
+    void Material::FillConstantBuffer(MaterialConstants& constants, bool useResourceDescriptorHeapBindless) const
     {
-        return texture ? texture->bindlessDescriptor.Get() : -1;
-    }
+        // Create lambda to handle bindless texture index retrieval
+        auto GetBindlessTextureIndex = [useResourceDescriptorHeapBindless](const std::shared_ptr<LoadedTexture>& texture) -> int {
+            if (!texture)
+                return -1;
+            
+            return useResourceDescriptorHeapBindless 
+                ? texture->bindlessDescriptor.GetIndexInHeap()
+                : texture->bindlessDescriptor.Get();
+        };
 
-    void Material::FillConstantBuffer(MaterialConstants& constants) const
-    {
         // flags
 
         constants.flags = 0;

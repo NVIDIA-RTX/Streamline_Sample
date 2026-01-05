@@ -103,6 +103,8 @@ namespace donut::engine
         nvrhi::TextureHandle m_WhiteTexture2DArray;
         nvrhi::TextureHandle m_BlackCubeMapArray;
         nvrhi::TextureHandle m_BlackTexture3D;
+        nvrhi::TextureHandle m_BlackDepthStencilTexture;
+        nvrhi::TextureHandle m_BlackDepthStencilTexture2DArray;
 
         nvrhi::SamplerHandle m_PointClampSampler;
         nvrhi::SamplerHandle m_LinearClampSampler;

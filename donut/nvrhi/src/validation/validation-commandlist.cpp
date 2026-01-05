@@ -467,6 +467,21 @@ namespace nvrhi::validation
         m_CommandList->copyBuffer(dest, destOffsetBytes, src, srcOffsetBytes, dataSizeBytes);
     }
 
+    void CommandListWrapper::clearSamplerFeedbackTexture(ISamplerFeedbackTexture* texture)
+    {
+        m_CommandList->clearSamplerFeedbackTexture(texture);
+    }
+
+    void CommandListWrapper::decodeSamplerFeedbackTexture(IBuffer* buffer, ISamplerFeedbackTexture* texture, nvrhi::Format format)
+    {
+        m_CommandList->decodeSamplerFeedbackTexture(buffer, texture, format);
+    }
+
+    void CommandListWrapper::setSamplerFeedbackTextureState(ISamplerFeedbackTexture* texture, ResourceStates stateBits)
+    {
+        m_CommandList->setSamplerFeedbackTextureState(texture, stateBits);
+    }
+
     bool CommandListWrapper::validateBindingSetsAgainstLayouts(const static_vector<BindingLayoutHandle, c_MaxBindingLayouts>& layouts, const static_vector<IBindingSet*, c_MaxBindingLayouts>& sets) const
     {
         if (layouts.size() != sets.size())
@@ -1787,6 +1802,56 @@ namespace nvrhi::validation
         }
 
         m_CommandList->executeMultiIndirectClusterOperation(desc);
+    }
+
+    void CommandListWrapper::convertCoopVecMatrices(coopvec::ConvertMatrixLayoutDesc const* convertDescs, size_t numDescs)
+    {
+        if (!m_Device->queryFeatureSupport(Feature::CooperativeVectorInferencing))
+        {
+            error("convertCoopVecMatrices: Cooperative Vectors are not supported by the device");
+            return;
+        }
+
+        for (size_t i = 0; i < numDescs; i++)
+        {
+            coopvec::ConvertMatrixLayoutDesc const& desc = convertDescs[i];
+
+            if (desc.src.buffer == nullptr)
+            {
+                std::stringstream ss;
+                ss << "convertCoopVecMatrices: src.buffer is NULL for convertDescs[" << i << "]";
+                error(ss.str());
+                return;
+            }
+
+            if (desc.dst.buffer == nullptr)
+            {
+                std::stringstream ss;
+                ss << "convertCoopVecMatrices: dst.buffer is NULL for convertDescs[" << i << "]";
+                error(ss.str());
+                return;
+            }
+
+            if (!desc.dst.buffer->getDesc().canHaveUAVs && m_Device->getGraphicsAPI() == GraphicsAPI::D3D12)
+            {
+                std::stringstream ss;
+                ss << "convertCoopVecMatrices: dst.buffer " << utils::DebugNameToString(desc.dst.buffer->getDesc().debugName)
+                    << " does not have the canHaveUAVs flag set for convertDescs[" << i << "]";
+                error(ss.str());
+                return;
+            }
+
+            if (desc.src.size == 0 || desc.dst.size == 0)
+            {
+                std::stringstream ss;
+                ss << "convertCoopVecMatrices: src.size (" << desc.src.size << ") and dst.size (" 
+                    << desc.dst.size << ") must be non-zero for convertDescs[" << i << "]";
+                error(ss.str());
+                return;
+            }
+        }
+
+        m_CommandList->convertCoopVecMatrices(convertDescs, numDescs);
     }
 
     void CommandListWrapper::evaluatePushConstantSize(const nvrhi::BindingLayoutVector& bindingLayouts)

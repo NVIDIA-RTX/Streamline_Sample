@@ -63,6 +63,7 @@ namespace donut::engine
         std::shared_ptr<GltfImporter> m_GltfImporter;
         std::vector<SceneImportResult> m_Models;
         bool m_EnableBindlessResources = false;
+        bool m_UseResourceDescriptorHeapBindless = false;
         
         nvrhi::BufferHandle m_MaterialBuffer;
         nvrhi::BufferHandle m_GeometryBuffer;

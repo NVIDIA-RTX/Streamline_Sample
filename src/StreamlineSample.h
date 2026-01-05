@@ -281,7 +281,8 @@ public:
     virtual bool LoadScene(std::shared_ptr<IFileSystem> fs, const std::filesystem::path& fileName) override;
     virtual void SceneLoaded() override;
     virtual void RenderSplashScreen(nvrhi::IFramebuffer* framebuffer) override;
-
+private:
+    void ToggleFullscreen();
 };
 
 struct ViewportData

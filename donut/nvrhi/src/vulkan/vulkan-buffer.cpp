@@ -161,6 +161,41 @@ namespace nvrhi::vulkan
             }
         }
 
+        if (m_Context.logBufferLifetime)
+        {
+            size_t byteDisplay = desc.byteSize;
+            const char* byteUnit = "B";
+
+            if (desc.byteSize > (1 << 20))
+            {
+                byteDisplay = desc.byteSize >> 20;
+                byteUnit = "MB";
+            }
+            else if (desc.byteSize > (1 << 10))
+            {
+                byteDisplay = desc.byteSize >> 10;
+                byteUnit = "KB";
+            }
+
+            std::stringstream ss;
+            ss << "Create buffer: " << desc.debugName
+                << " Buf:0x" << std::hex << reinterpret_cast<uintptr_t>(VkBuffer(buffer->buffer))
+                << " Gpu:0x" << std::hex << buffer->getGpuVirtualAddress() << "->0x" << std::hex << buffer->getGpuVirtualAddress() + desc.byteSize;
+
+            if (desc.structStride)
+            {
+                ss << " (n:" << std::dec << (desc.structStride ? desc.byteSize / desc.structStride : 0)
+                    << " stride:" << std::dec << desc.structStride
+                    << "B size:" << std::dec << byteDisplay << byteUnit << ")";
+            }
+            else
+            {
+                ss << " (size:" << std::dec << byteDisplay << byteUnit << ")";
+            }
+
+            m_Context.info(ss.str());
+        }
+
         return BufferHandle::Create(buffer);
     }
 
@@ -478,6 +513,13 @@ namespace nvrhi::vulkan
 
     Buffer::~Buffer()
     {
+        if (m_Context.logBufferLifetime)
+        {
+            std::stringstream ss;
+            ss << "Release buffer: " << desc.debugName << " 0x" << std::hex << getGpuVirtualAddress();
+            m_Context.info(ss.str());
+        }
+
         if (mappedMemory)
         {
             m_Context.device.unmapMemory(memory);
