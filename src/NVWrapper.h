@@ -263,7 +263,9 @@ enum DLSSGFlags : uint32_t
 enum class DLSSGMode
 {
     eOff,
-    eOn
+    eOn,
+    eAuto,
+    eDynamic
 };
 struct DLSSGOptions
 {
@@ -282,6 +284,7 @@ struct DLSSGOptions
     uint32_t depthBufferFormat{};
     uint32_t hudLessBufferFormat{};
     uint32_t uiBufferFormat{};
+    bool enableUserInterfaceRecomposition = true;
 };
 
 enum DLSSGStatus
@@ -475,7 +478,7 @@ public:
     virtual void NativeToProxy(void *proxy, void **native) = 0;
     virtual void QueueGPUWaitOnSyncObjectSet(nvrhi::IDevice *pDevice, nvrhi::CommandQueue cmdQType, void *syncObj, uint64_t syncObjVal) = 0;
     virtual uint64_t GetDLSSGLastFenceValue() { return 0; };
-    virtual void QueryDLSSGState(uint64_t &estimatedVRamUsage, int &fps_multiplier, sl::DLSSGStatus &status, int &minSize, int &framesMax, void *&pFence, uint64_t &fenceValue) = 0;
+    virtual void QueryDLSSGState(uint64_t &estimatedVRamUsage, int &fps_multiplier, sl::DLSSGStatus &status, int &minSize, int &framesMax, void *&pFence, uint64_t &fenceValue, bool &vsyncSupported, bool &bIsDynamicMFGSupported) = 0;
 
     virtual sl::FeatureRequirements GetFeatureRequirements(sl::Feature feature) = 0;
     virtual sl::FeatureVersion GetFeatureVersion(sl::Feature feature) = 0;
@@ -516,6 +519,20 @@ public:
         nvrhi::ICommandList *commandList,
         bool validViewportExtent = false,
         sl::Extent backBufferExtent = {}) = 0;
+
+    // Tag UI Color & Alpha texture for DLSS-G
+    // uiColorAlpha: RGBA16F texture where RGB=premultiplied color, A=alpha blend value
+    virtual void TagResources_UIColorAlpha(
+        nvrhi::ICommandList *commandList,
+        const donut::engine::IView *view,
+        nvrhi::ITexture *uiColorAlpha) = 0;
+
+    // Tag UI Alpha-only texture for DLSS-G
+    // uiAlpha: R16F texture containing only alpha values (1-channel)
+    virtual void TagResources_UIAlpha(
+        nvrhi::ICommandList *commandList,
+        const donut::engine::IView *view,
+        nvrhi::ITexture *uiAlpha) = 0;
 
     virtual void TagResources_DeepDVC(
         nvrhi::ICommandList *commandList,

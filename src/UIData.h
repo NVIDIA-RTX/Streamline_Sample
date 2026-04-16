@@ -60,6 +60,17 @@ enum class RenderingResolutionMode {
     COUNT
 };
 
+/// <summary>
+/// This enum describes the UI Tagging Strategy for DLSS-G frame generation
+/// </summary>
+enum class UITaggingStrategy {
+    Off,              // Single pass - no separate UI tagging
+    UIColorAndAlpha,  // 4-channel RGBA texture (color + alpha)
+    UIAlpha,          // 1-channel alpha-only texture
+    Both,             // Tag both textures (4-channel + 1-channel)
+    COUNT
+};
+
 struct UIData
 {
     // General
@@ -212,6 +223,8 @@ public:
 
     // DLFG specific parameters
     bool                                DLSSG_Supported = false;
+    bool                                DLSSG_VsyncSupported = true;  // SL-VSYNC-011: From bIsVsyncSupportAvailable
+    bool                                DLSSG_DynamicMFGSupported = false;
     sl::DLSSGMode                       DLSSG_mode = sl::DLSSGMode::eOff;
     int                                 DLSSG_numFrames = 2;
     int                                 DLSSG_numFramesMaxMultiplier = 4;
@@ -219,11 +232,14 @@ public:
     size_t                              DLSSG_memory = 0;
     std::string                         DLSSG_status = "";
     bool                                DLSSG_cleanup_needed = false;
+    bool                                DLSSG_enableUIRecomposition = true;  // Matches sl::DLSSGOptions::enableUserInterfaceRecomposition default
 
     // Latewarp
     bool                                Latewarp_Supported = false;
     int                                 Latewarp_active = 0;
     bool                                Latewarp_cleanup_needed = false;
 
-};
+    // UI Tagging Strategy for DLSS-G and other UI using features
+    UITaggingStrategy                   UI_TaggingStrategy = UITaggingStrategy::UIAlpha;
 
+};

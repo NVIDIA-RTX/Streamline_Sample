@@ -509,7 +509,8 @@ void SLWrapper::Shutdown()
         sl::ResourceTag{nullptr, sl::kBufferTypeMotionVectors, sl::ResourceLifecycle::eValidUntilPresent},
         sl::ResourceTag{nullptr, sl::kBufferTypeScalingInputColor, sl::ResourceLifecycle::eValidUntilPresent},
         sl::ResourceTag{nullptr, sl::kBufferTypeScalingOutputColor, sl::ResourceLifecycle::eValidUntilPresent},
-        sl::ResourceTag{nullptr, sl::kBufferTypeHUDLessColor, sl::ResourceLifecycle::eValidUntilPresent} };
+        sl::ResourceTag{nullptr, sl::kBufferTypeHUDLessColor, sl::ResourceLifecycle::eValidUntilPresent},
+        sl::ResourceTag{nullptr, sl::kBufferTypeUIColorAndAlpha, sl::ResourceLifecycle::eValidUntilPresent} };
     successCheck(SetTag(inputs, _countof(inputs), nullptr), "slSetTag_clear");
 
     // Shutdown Streamline
@@ -741,9 +742,11 @@ void SLWrapper::SetDLSSGOptions(const sl::DLSSGOptions consts) {
     successCheck(slDLSSGSetOptions(m_viewport, m_dlssg_consts), "slDLSSGSetOptions");
 }
 
-void SLWrapper::QueryDLSSGState(uint64_t& estimatedVRamUsage, int& fps_multiplier, sl::DLSSGStatus& status, int& minSize, int& maxFrameCount, void*& pFence, uint64_t& fenceValue) {
+void SLWrapper::QueryDLSSGState(uint64_t& estimatedVRamUsage, int& fps_multiplier, sl::DLSSGStatus& status, int& minSize, int& maxFrameCount, void*& pFence, uint64_t& fenceValue, bool& vsyncSupported, bool& bIsDynamicMFGSupported) {
     if (!m_sl_initialised || !m_dlssg_available) {
         log::warning("SL not initialised or DLSSG not available.");
+        vsyncSupported = true;  // Default to supported when not initialized
+        bIsDynamicMFGSupported = false;  // Default to not supported when not initialized
         return;
     }
 
@@ -756,6 +759,9 @@ void SLWrapper::QueryDLSSGState(uint64_t& estimatedVRamUsage, int& fps_multiplie
     maxFrameCount = m_dlssg_settings.numFramesToGenerateMax;
     pFence = m_dlssg_settings.inputsProcessingCompletionFence;
     fenceValue = m_dlssg_settings.lastPresentInputsProcessingCompletionFenceValue;
+    // SL-VSYNC-011: Report whether VSync is supported with Frame Generation
+    vsyncSupported = (m_dlssg_settings.bIsVsyncSupportAvailable == sl::Boolean::eTrue);
+    bIsDynamicMFGSupported = (m_dlssg_settings.bIsDynamicMFGSupported == sl::Boolean::eTrue);
 }
 
 uint64_t SLWrapper::GetDLSSGLastFenceValue() { return m_dlssg_settings.lastPresentInputsProcessingCompletionFenceValue; }
@@ -1188,6 +1194,60 @@ void SLWrapper::TagResources_DLSS_FG(
     sl::ResourceTag backBufferResourceTag = sl::ResourceTag{ nullptr, sl::kBufferTypeBackbuffer, sl::ResourceLifecycle{}, validViewportExtent ? &backBufferExtent : nullptr };
     sl::ResourceTag inputs[] = { backBufferResourceTag };
     successCheck(SetTag(inputs, _countof(inputs), cmdbuffer), "slSetTag_dlss_fg");
+}
+
+void SLWrapper::TagResources_UIColorAlpha(
+    nvrhi::ICommandList* commandList,
+    const donut::engine::IView* view,
+    nvrhi::ITexture* uiColorAlpha)
+{
+    if (!m_sl_initialised) {
+        log::warning("Streamline not initialised.");
+        return;
+    }
+
+    if (uiColorAlpha == nullptr) {
+        log::warning("UI Color Alpha texture is null.");
+        return;
+    }
+
+    sl::Extent fullExtent{ 0, 0, uiColorAlpha->getDesc().width, uiColorAlpha->getDesc().height };
+    void* cmdbuffer = GetNativeCommandList(commandList);
+    sl::Resource uiColorAlphaResource{};
+
+    GetSLResource(commandList, uiColorAlphaResource, uiColorAlpha, view);
+
+    sl::ResourceTag uiColorAlphaResourceTag = sl::ResourceTag{ &uiColorAlphaResource, sl::kBufferTypeUIColorAndAlpha, sl::ResourceLifecycle::eValidUntilPresent, &fullExtent };
+
+    sl::ResourceTag inputs[] = { uiColorAlphaResourceTag };
+    successCheck(SetTag(inputs, _countof(inputs), cmdbuffer), "slSetTag_uiColorAlpha");
+}
+
+void SLWrapper::TagResources_UIAlpha(
+    nvrhi::ICommandList* commandList,
+    const donut::engine::IView* view,
+    nvrhi::ITexture* uiAlpha)
+{
+    if (!m_sl_initialised) {
+        log::warning("Streamline not initialised.");
+        return;
+    }
+
+    if (uiAlpha == nullptr) {
+        log::warning("UI Alpha texture is null.");
+        return;
+    }
+
+    sl::Extent fullExtent{ 0, 0, uiAlpha->getDesc().width, uiAlpha->getDesc().height };
+    void* cmdbuffer = GetNativeCommandList(commandList);
+    sl::Resource uiAlphaResource{};
+
+    GetSLResource(commandList, uiAlphaResource, uiAlpha, view);
+
+    sl::ResourceTag uiAlphaResourceTag = sl::ResourceTag{ &uiAlphaResource, sl::kBufferTypeUIAlpha, sl::ResourceLifecycle::eValidUntilPresent, &fullExtent };
+
+    sl::ResourceTag inputs[] = { uiAlphaResourceTag };
+    successCheck(SetTag(inputs, _countof(inputs), cmdbuffer), "slSetTag_uiAlpha");
 }
 
 void SLWrapper::TagResources_DeepDVC(

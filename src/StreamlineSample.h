@@ -269,13 +269,16 @@ public:
     void SetCurrentSceneName(const std::string& sceneName);
     std::shared_ptr<ShaderFactory> GetShaderFactory() const { return m_ShaderFactory; };
     std::shared_ptr<donut::vfs::IFileSystem> GetRootFs() const { return m_RootFs; };
+    
+    // Accessors for render resources (used by UIRenderer for DLSS-G UI Color & Alpha)
+    RenderTargets* GetRenderTargets() const { return m_RenderTargets.get(); }
+    const donut::engine::IView* GetView() const { return m_View.get(); }
 
     virtual bool KeyboardUpdate(int key, int scancode, int action, int mods) override;
     virtual bool MousePosUpdate(double xpos, double ypos) override;
     virtual bool MouseButtonUpdate(int button, int action, int mods) override;
     virtual bool MouseScrollUpdate(double xoffset, double yoffset) override;
     virtual void SetLatewarpOptions() override;
-    virtual void Render(nvrhi::IFramebuffer* backBufferFramebuffer) override { RenderScene(backBufferFramebuffer); };
     virtual void Animate(float fElapsedTimeSeconds) override;
     virtual void SceneUnloading() override;
     virtual bool LoadScene(std::shared_ptr<IFileSystem> fs, const std::filesystem::path& fileName) override;
@@ -324,7 +327,6 @@ struct MultiViewportApp : public ApplicationBase
         return m_pViewports[0]->m_pSample->MouseScrollUpdate(xoffset, yoffset);
     }
     virtual void SetLatewarpOptions() override { getASample()->SetLatewarpOptions(); }
-    virtual void Render(nvrhi::IFramebuffer* frameBuffer) override { getASample()->Render(frameBuffer); }
     virtual void Animate(float fElapsedTimeSeconds) override
     {
         for (uint32_t uV = 0; uV < m_pViewports.size(); ++uV)

@@ -136,6 +136,16 @@ public:
         nvrhi::ICommandList* commandList,
         bool validViewportExtent = false,
         sl::Extent backBufferExtent = {}) override;
+
+    void TagResources_UIColorAlpha(
+        nvrhi::ICommandList* commandList,
+        const donut::engine::IView* view,
+        nvrhi::ITexture* uiColorAlpha) override;
+
+    void TagResources_UIAlpha(
+        nvrhi::ICommandList* commandList,
+        const donut::engine::IView* view,
+        nvrhi::ITexture* uiAlpha) override;
     
     void TagResources_DeepDVC(
         nvrhi::ICommandList* commandList,
@@ -187,7 +197,7 @@ public:
     void QueryReflexStats(bool& reflex_lowLatencyAvailable, bool& reflex_flashAvailable, std::string& stats) override;
 
     void SetDLSSGOptions(const sl::DLSSGOptions consts) override;
-    void QueryDLSSGState(uint64_t& estimatedVRamUsage, int& fps_multiplier, sl::DLSSGStatus& status, int& minSize, int& framesMax, void*& pFence, uint64_t& fenceValue);
+    void QueryDLSSGState(uint64_t& estimatedVRamUsage, int& fps_multiplier, sl::DLSSGStatus& status, int& minSize, int& framesMax, void*& pFence, uint64_t& fenceValue, bool& vsyncSupported, bool& bIsDynamicMFGSupported) override;
     bool Get_DLSSG_SwapChainRecreation(bool& turn_on) const override;
     void CleanupDLSSG(bool wfi) override;
     uint64_t GetDLSSGLastFenceValue() override;

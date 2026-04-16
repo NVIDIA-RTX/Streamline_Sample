@@ -41,7 +41,7 @@
 #include <imgui_internal.h>
 #include <donut/engine/Scene.h>
 #include <nvrhi/nvrhi.h>
-#include <donut/app/imgui_renderer.h>
+#include "ImguiOverride/sl_imgui_renderer.h"
 
 void pushDisabled() {
     ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
@@ -54,7 +54,7 @@ void popDisabled() {
 
 constexpr ImU32 TITLE_COL = IM_COL32(0, 255, 0, 255);
 
-class UIRenderer : public ImGui_Renderer
+class UIRenderer : public donut::app::SL_ImGui_Renderer
 {
 private:
     std::shared_ptr<StreamlineSample> m_app;
@@ -69,12 +69,17 @@ private:
     bool    m_last_rt_mode = false;
     bool    m_rt_changed = false;
 
+    // Command list for UI Color Alpha operations
+    nvrhi::CommandListHandle m_UICommandList;
 
 public:
     UIRenderer(DeviceManager* deviceManager, std::shared_ptr<StreamlineSample> app, UIData& ui)
-        : ImGui_Renderer(deviceManager)
+        : SL_ImGui_Renderer(deviceManager)
         , m_app(app)
         , m_ui(ui) {
+
+        // Create command list for UI Color Alpha operations
+        m_UICommandList = deviceManager->GetDevice()->createCommandList();
 
         // IMGUI by default writes in srgb colorSpace, but our back buffer is in rgb, we will simply pre-empt this by gamma shifting the colors.
         auto invGamma = 1.f / 2.2f;
@@ -109,8 +114,114 @@ public:
 
     virtual bool ShouldRenderUnfocused() override
     { 
-        return true; 
+        return true;
     }
+
+    virtual void Render(nvrhi::IFramebuffer* framebuffer) override
+    {
+        // If DLSS-G/Latewarp is active and UI Tagging Strategy is not Off, use separate UI rendering
+        const bool bFGActive = (m_ui.DLSSG_mode != sl::DLSSGMode::eOff) || m_ui.Latewarp_active;
+        const bool bUITaggingEnabled = (m_ui.UI_TaggingStrategy != UITaggingStrategy::Off);
+        
+        if (bFGActive && bUITaggingEnabled && m_app->GetRenderTargets() && m_app->GetView())
+        {
+            auto renderTargets = m_app->GetRenderTargets();
+            const donut::engine::IView* view = m_app->GetView();
+            
+            // Clear UI textures before rendering
+            m_UICommandList->open();
+            m_UICommandList->clearTextureFloat(
+                renderTargets->UIColorAlpha, 
+                nvrhi::AllSubresources, 
+                nvrhi::Color(0.f, 0.f, 0.f, 0.f)
+            );
+            
+            if (m_ui.UI_TaggingStrategy == UITaggingStrategy::UIAlpha || 
+                m_ui.UI_TaggingStrategy == UITaggingStrategy::Both)
+            {
+                // Also clear UIAlpha texture for composite MRT pass
+                m_UICommandList->clearTextureFloat(
+                    renderTargets->UIAlpha, 
+                    nvrhi::AllSubresources, 
+                    nvrhi::Color(0.f, 0.f, 0.f, 0.f)
+                );
+            }
+            m_UICommandList->close();
+            GetDeviceManager()->GetDevice()->executeCommandList(m_UICommandList);
+
+            // Render UI to UIColorAlpha texture (always single RT)
+            auto uiFramebuffer = renderTargets->UIColorAlphaFramebuffer->GetFramebuffer(*view);
+            RenderToUITexture(uiFramebuffer);
+
+            // Tag and composite based on UI Tagging Strategy
+            m_UICommandList->open();
+            
+            switch (m_ui.UI_TaggingStrategy)
+            {
+                case UITaggingStrategy::UIColorAndAlpha:
+                    // Tag the 4-channel UI Color and Alpha texture for DLSS-G
+                    NVWrapper::Get().TagResources_UIColorAlpha(
+                        m_UICommandList,
+                        view,
+                        renderTargets->UIColorAlpha
+                    );
+                    // Standard composite to backbuffer
+                    CompositeUIToBackbuffer(m_UICommandList, framebuffer, renderTargets->UIColorAlpha);
+                    break;
+                    
+                case UITaggingStrategy::UIAlpha:
+                    // MRT composite: writes to backbuffer AND extracts alpha to UIAlpha
+                    CompositeUIToBackbufferWithAlpha(
+                        m_UICommandList,
+                        framebuffer->getDesc().colorAttachments[0].texture,
+                        renderTargets->UIColorAlpha,
+                        renderTargets->UIAlpha
+                    );
+                    // Tag the 1-channel UI Alpha texture for DLSS-G
+                    NVWrapper::Get().TagResources_UIAlpha(
+                        m_UICommandList,
+                        view,
+                        renderTargets->UIAlpha
+                    );
+                    break;
+
+                case UITaggingStrategy::Both:
+                    // MRT composite: writes to backbuffer AND extracts alpha to UIAlpha
+                    CompositeUIToBackbufferWithAlpha(
+                        m_UICommandList,
+                        framebuffer->getDesc().colorAttachments[0].texture,
+                        renderTargets->UIColorAlpha,
+                        renderTargets->UIAlpha
+                    );
+                    // Tag BOTH textures for DLSS-G
+                    NVWrapper::Get().TagResources_UIColorAlpha(
+                        m_UICommandList,
+                        view,
+                        renderTargets->UIColorAlpha
+                    );
+                    NVWrapper::Get().TagResources_UIAlpha(
+                        m_UICommandList,
+                        view,
+                        renderTargets->UIAlpha
+                    );
+                    break;
+                    
+                case UITaggingStrategy::Off:
+                default:
+                    // No tagging - should not reach here due to outer check
+                    break;
+            }
+            
+            m_UICommandList->close();
+            GetDeviceManager()->GetDevice()->executeCommandList(m_UICommandList);
+        }
+        else
+        {
+            // No DLSS-G/Latewarp active or UI tagging is Off - render UI directly to backbuffer
+            SL_ImGui_Renderer::Render(framebuffer);
+        }
+    }
+
 protected:
     virtual void buildUI(void) override
     {
@@ -159,14 +270,20 @@ protected:
         if (m_ui.DLSSG_mode != sl::DLSSGMode::eOff ) {
             ImGui::Text("True FPS: %.0f ", m_ui.DLSSG_fps);
         }
-        // Vsync
-        if (m_ui.DLSSG_mode != sl::DLSSGMode::eOff && !m_dev_view) {
+        // Vsync - SL-VSYNC-011: VSync toggle enabled based on bIsVsyncSupportAvailable from DLSS-G state
+        const bool bFGActive = (m_ui.DLSSG_mode != sl::DLSSGMode::eOff);
+        const bool bVSyncSupported = m_dev_view ||              // dev mode: always allow
+                                     !bFGActive ||              // FG off: always available  
+                                     m_ui.DLSSG_VsyncSupported; // FG on: check SDK flag
+        if (!bVSyncSupported) {
             pushDisabled();
             m_ui.EnableVsync = false;
         }
         ImGui::Checkbox("VSync", &m_ui.EnableVsync);
-        if (m_ui.DLSSG_mode != sl::DLSSGMode::eOff && !m_dev_view) {
+        if (!bVSyncSupported) {
             popDisabled();
+            ImGui::SameLine();
+            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "(Not supported with this FG build)");
         }
 
         // Resolution 
@@ -306,20 +423,71 @@ protected:
             ImGui::Text("Frame Generation");
             ImGui::SameLine();
             if (!m_ui.DLSSG_Supported || !m_ui.REFLEX_Supported) pushDisabled();
-            if (ImGui::Combo("##FrameGeneration", (int*)&m_ui.DLSSG_mode, "Off\0On\0Auto (Dynamic Frame Generation)\0"))
-            {
-                if (m_ui.DLSSG_mode == sl::DLSSGMode::eOff)
-                {
-                    m_ui.DLSSG_cleanup_needed = true;
+            
+            // Build unified dropdown with Off, Dynamic, Auto, and multiplier options
+            std::vector<std::string> fgOptions;
+            fgOptions.push_back("Off");
+            fgOptions.push_back("Dynamic");
+            fgOptions.push_back("Auto");
+            
+            int dynamicIndex = 1;
+            int autoIndex = 2;
+            int firstMultiplierIndex = 3;
+            
+            // Add multiplier options (2x, 3x, etc.)
+            for (int i = 2; i <= m_ui.DLSSG_numFramesMaxMultiplier; ++i) {
+                if (m_ui.DLSSG_numFramesMaxMultiplier == 2 && i == 2) {
+                    fgOptions.push_back("On");  // Special case: show "On" when only 2x is supported
+                } else {
+                    fgOptions.push_back(std::to_string(i) + "x");
                 }
             }
-            if (m_ui.DLSSG_mode != sl::DLSSGMode::eOff)
+            
+            // Determine current selection
+            int currentSelection = 0;
+            if (m_ui.DLSSG_mode == sl::DLSSGMode::eOff) {
+                currentSelection = 0;
+            } else if (m_ui.DLSSG_mode == sl::DLSSGMode::eDynamic) {
+                currentSelection = dynamicIndex;
+            } else if (m_ui.DLSSG_mode == sl::DLSSGMode::eAuto) {
+                currentSelection = autoIndex;
+            } else if (m_ui.DLSSG_mode == sl::DLSSGMode::eOn) {
+                currentSelection = firstMultiplierIndex + (m_ui.DLSSG_numFrames - 2);
+            }
+            
+            if (ImGui::BeginCombo("##FrameGeneration", fgOptions[currentSelection].c_str()))
             {
-                ImGui::Indent();
-                ImGui::Text("Generated Frames");
-                ImGui::SameLine();
-                ImGui::SliderInt("##MultiframeCount", &m_ui.DLSSG_numFrames, 2, m_ui.DLSSG_numFramesMaxMultiplier, "%dx", ImGuiSliderFlags_AlwaysClamp);
-                ImGui::Unindent();
+                for (int i = 0; i < (int)fgOptions.size(); ++i)
+                {
+                    bool shouldDisable = false;
+                    if (i == dynamicIndex && !m_ui.DLSSG_DynamicMFGSupported) {
+                        shouldDisable = true;
+                    }
+                    
+                    if (shouldDisable) pushDisabled();
+                    
+                    bool is_selected = (i == currentSelection);
+                    if (ImGui::Selectable(fgOptions[i].c_str(), is_selected)) {
+                        if (i == 0) {
+                            m_ui.DLSSG_mode = sl::DLSSGMode::eOff;
+                            m_ui.DLSSG_numFrames = 2;
+                            m_ui.DLSSG_cleanup_needed = true;
+                        } else if (i == dynamicIndex) {
+                            m_ui.DLSSG_mode = sl::DLSSGMode::eDynamic;
+                            m_ui.DLSSG_numFrames = 2;
+                        } else if (i == autoIndex) {
+                            m_ui.DLSSG_mode = sl::DLSSGMode::eAuto;
+                            m_ui.DLSSG_numFrames = 2;
+                        } else {
+                            m_ui.DLSSG_mode = sl::DLSSGMode::eOn;
+                            m_ui.DLSSG_numFrames = 2 + (i - firstMultiplierIndex);
+                        }
+                    }
+                    if (is_selected) ImGui::SetItemDefaultFocus();
+                    
+                    if (shouldDisable) popDisabled();
+                }
+                ImGui::EndCombo();
             }
             if (!m_ui.DLSSG_Supported || !m_ui.REFLEX_Supported) popDisabled();
             if (m_ui.DLSSG_status != "") ImGui::Text((std::string("State: ") + m_ui.DLSSG_status).c_str());
@@ -583,6 +751,7 @@ protected:
 
                 const std::map<sl::DLSSPreset,std::string> DLSSPresetToDropdownMap = {
                     {sl::DLSSPreset::eDefault, "Default##Presets"},
+                    {sl::DLSSPreset::ePresetE, "Preset E##Presets"},
                     {sl::DLSSPreset::ePresetF, "Preset F##Presets"},
                     {sl::DLSSPreset::ePresetJ, "Preset J##Presets"},
                     {sl::DLSSPreset::ePresetK, "Preset K##Presets"},
@@ -835,22 +1004,89 @@ protected:
 
             ImGui::Text("DLSS-G Supported: %s", m_ui.DLSSG_Supported ? "yes" : "no");
             if (m_ui.DLSSG_Supported) {
-
                 if (m_ui.REFLEX_Mode == (int)sl::ReflexMode::eOff) {
                     ImGui::Text("Reflex needs to be enabled for DLSSG to be enabled");
                     m_ui.DLSSG_mode = sl::DLSSGMode::eOff;
                 }
                 else {
-                    if (ImGui::Combo("DLSS-G Mode", (int*)&m_ui.DLSSG_mode, "Off\0On\0Auto (Dynamic Frame Generation)\0"))
-                    {
-                        if (m_ui.DLSSG_mode == sl::DLSSGMode::eOff)
-                        {
-                            m_ui.DLSSG_cleanup_needed = true;
+                    // Build unified dropdown with Off, Dynamic, Auto, and multiplier options
+                    std::vector<std::string> fgOptions;
+                    fgOptions.push_back("Off");
+                    fgOptions.push_back("Dynamic");
+                    fgOptions.push_back("Auto");
+                    
+                    int dynamicIndex = 1;
+                    int autoIndex = 2;
+                    int firstMultiplierIndex = 3;
+                    
+                    // Add multiplier options (2x, 3x, etc.)
+                    for (int i = 2; i <= m_ui.DLSSG_numFramesMaxMultiplier; ++i) {
+                        if (m_ui.DLSSG_numFramesMaxMultiplier == 2 && i == 2) {
+                            fgOptions.push_back("On");  // Special case: show "On" when only 2x is supported
+                        } else {
+                            fgOptions.push_back(std::to_string(i) + "x");
                         }
+                    }
+                    
+                    // Determine current selection
+                    int currentSelection = 0;
+                    if (m_ui.DLSSG_mode == sl::DLSSGMode::eOff) {
+                        currentSelection = 0;
+                    } else if (m_ui.DLSSG_mode == sl::DLSSGMode::eDynamic) {
+                        currentSelection = dynamicIndex;
+                    } else if (m_ui.DLSSG_mode == sl::DLSSGMode::eAuto) {
+                        currentSelection = autoIndex;
+                    } else if (m_ui.DLSSG_mode == sl::DLSSGMode::eOn) {
+                        currentSelection = firstMultiplierIndex + (m_ui.DLSSG_numFrames - 2);
+                    }
+                    
+                    if (ImGui::BeginCombo("DLSS-G Mode", fgOptions[currentSelection].c_str()))
+                    {
+                        for (int i = 0; i < (int)fgOptions.size(); ++i)
+                        {
+                            bool shouldDisable = false;
+                            if (i == dynamicIndex && !m_ui.DLSSG_DynamicMFGSupported) {
+                                shouldDisable = true;
+                            }
+                            
+                            if (shouldDisable) pushDisabled();
+                            
+                            bool is_selected = (i == currentSelection);
+                            if (ImGui::Selectable(fgOptions[i].c_str(), is_selected)) {
+                                if (i == 0) {
+                                    m_ui.DLSSG_mode = sl::DLSSGMode::eOff;
+                                    m_ui.DLSSG_numFrames = 2;
+                                    m_ui.DLSSG_cleanup_needed = true;
+                                } else if (i == dynamicIndex) {
+                                    m_ui.DLSSG_mode = sl::DLSSGMode::eDynamic;
+                                    m_ui.DLSSG_numFrames = 2;
+                                } else if (i == autoIndex) {
+                                    m_ui.DLSSG_mode = sl::DLSSGMode::eAuto;
+                                    m_ui.DLSSG_numFrames = 2;
+                                } else {
+                                    m_ui.DLSSG_mode = sl::DLSSGMode::eOn;
+                                    m_ui.DLSSG_numFrames = 2 + (i - firstMultiplierIndex);
+                                }
+                            }
+                            if (is_selected) ImGui::SetItemDefaultFocus();
+                            
+                            if (shouldDisable) popDisabled();
+                        }
+                        ImGui::EndCombo();
                     }
                 }
 
+                // UI Tagging Strategy option
+                ImGui::Text("UI Tagging Strategy");
+                ImGui::SameLine();
+                ImGui::Combo("##UITaggingStrategy", (int*)&m_ui.UI_TaggingStrategy, "Off (single pass)\0UI Color and Alpha (4 channel)\0UI Alpha (1 channel)\0Both (4 + 1 channel)\0");
 
+                // UI Recomposition option (matches sl::DLSSGOptions::enableUserInterfaceRecomposition)
+                ImGui::Checkbox("Enable UI Recomposition", &m_ui.DLSSG_enableUIRecomposition);
+                if (ImGui::IsItemHovered())
+                {
+                    ImGui::SetTooltip("When enabled, DLSS-G will allocate a codepath that supports interpolating 'HUDless' and 'UI Color & Alpha' separately from the Color Backbuffer.");
+                }
             }
 
 

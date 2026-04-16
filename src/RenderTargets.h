@@ -56,6 +56,8 @@ public:
     nvrhi::TextureHandle AmbientOcclusion;
     nvrhi::TextureHandle NisColor;
     nvrhi::TextureHandle PreUIColor;
+    nvrhi::TextureHandle UIColorAlpha;  // RGBA16F texture for DLSS-G UI Color & Alpha input (4-channel)
+    nvrhi::TextureHandle UIAlpha;       // R16F texture for DLSS-G UI Alpha-only input (1-channel)
     nvrhi::TextureHandle SpecHitDistance;
     nvrhi::TextureHandle GBufferDiffuseRR;
     nvrhi::TextureHandle GBufferSpecularRR;
@@ -69,6 +71,8 @@ public:
     std::shared_ptr<donut::engine::FramebufferFactory> LdrFramebuffer;
     std::shared_ptr<donut::engine::FramebufferFactory> AAResolvedFramebuffer;
     std::shared_ptr<donut::engine::FramebufferFactory> PreUIFramebuffer;
+    std::shared_ptr<donut::engine::FramebufferFactory> UIColorAlphaFramebuffer;
+    std::shared_ptr<donut::engine::FramebufferFactory> UIAlphaFramebuffer;
     std::shared_ptr<donut::engine::FramebufferFactory> SpecHitDistanceBuffer;
 
     donut::math::int2 m_RenderSize;// size of render targets pre-DLSS
@@ -176,6 +180,18 @@ public:
         desc.debugName = "PreUIColor";
         PreUIColor = device->createTexture(desc);
 
+        // UI Color & Alpha texture for DLSS-G: RGBA16F with RGB=color, A=alpha blending
+        desc.format = nvrhi::Format::RGBA16_FLOAT;
+        desc.isUAV = false;
+        desc.debugName = "UIColorAlpha";
+        UIColorAlpha = device->createTexture(desc);
+
+        // UI Alpha-only texture for DLSS-G: R16F with alpha value only (1-channel)
+        desc.format = nvrhi::Format::R16_FLOAT;
+        desc.isUAV = false;
+        desc.debugName = "UIAlpha";
+        UIAlpha = device->createTexture(desc);
+
 
 
         if (desc.isVirtual)
@@ -194,6 +210,8 @@ public:
                 GBufferEmissiveRR,
                 ColorspaceCorrectionColor,
                 PreUIColor,
+                UIColorAlpha,
+                UIAlpha,
                 NisColor,
                 AmbientOcclusion,
                 GBufferSpecularRR,
@@ -244,6 +262,13 @@ public:
 
         PreUIFramebuffer = std::make_shared<donut::engine::FramebufferFactory>(device);
         PreUIFramebuffer->RenderTargets = { PreUIColor };
+
+        UIColorAlphaFramebuffer = std::make_shared<donut::engine::FramebufferFactory>(device);
+        UIColorAlphaFramebuffer->RenderTargets = { UIColorAlpha };
+
+        UIAlphaFramebuffer = std::make_shared<donut::engine::FramebufferFactory>(device);
+        UIAlphaFramebuffer->RenderTargets = { UIAlpha };
+
     }
 
     bool IsUpdateRequired(donut::math::int2 renderSize, donut::math::int2 displaySize, donut::math::uint sampleCount = 1) const
@@ -260,6 +285,8 @@ public:
         commandList->clearTextureFloat(LdrColor, nvrhi::AllSubresources, nvrhi::Color(0.f));
         commandList->clearTextureFloat(NisColor, nvrhi::AllSubresources, nvrhi::Color(0.f));
         commandList->clearTextureFloat(PreUIColor, nvrhi::AllSubresources, nvrhi::Color(0.f));
+        commandList->clearTextureFloat(UIColorAlpha, nvrhi::AllSubresources, nvrhi::Color(0.f));
+        commandList->clearTextureFloat(UIAlpha, nvrhi::AllSubresources, nvrhi::Color(0.f));
         commandList->clearTextureFloat(AAResolvedColor, nvrhi::AllSubresources, nvrhi::Color(0.f));
         commandList->clearTextureFloat(SpecHitDistance, nvrhi::AllSubresources, nvrhi::Color(0.f));
         commandList->clearTextureFloat(GBufferDiffuseRR, nvrhi::AllSubresources, nvrhi::Color(0.f));

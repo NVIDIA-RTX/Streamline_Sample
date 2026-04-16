@@ -78,7 +78,7 @@ public:
     void Shutdown() override;
     void ProxyToNative(void* proxy, void** native) override;
     void NativeToProxy(void* proxy, void** native) override;
-    void QueryDLSSGState(uint64_t &estimatedVRamUsage, int &fps_multiplier, sl::DLSSGStatus &status, int &minSize, int &framesMax, void *&pFence, uint64_t &fenceValue) override { };
+    void QueryDLSSGState(uint64_t &estimatedVRamUsage, int &fps_multiplier, sl::DLSSGStatus &status, int &minSize, int &framesMax, void *&pFence, uint64_t &fenceValue, bool &vsyncSupported, bool &bIsDynamicMFGSupported) override { vsyncSupported = true; bIsDynamicMFGSupported = false; };
 
     sl::FeatureRequirements GetFeatureRequirements(sl::Feature feature) override;
     sl::FeatureVersion GetFeatureVersion(sl::Feature feature) override;
@@ -101,6 +101,16 @@ public:
         nvrhi::ICommandList *commandList,
         bool validViewportExtent = false,
         sl::Extent backBufferExtent = {}) override { };
+
+    void TagResources_UIColorAlpha(
+        nvrhi::ICommandList *commandList,
+        const donut::engine::IView *view,
+        nvrhi::ITexture *uiColorAlpha) override { };
+
+    void TagResources_UIAlpha(
+        nvrhi::ICommandList *commandList,
+        const donut::engine::IView *view,
+        nvrhi::ITexture *uiAlpha) override { };
 
     void TagResources_DeepDVC(
         nvrhi::ICommandList *commandList,

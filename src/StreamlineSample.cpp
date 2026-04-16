@@ -93,10 +93,8 @@ StreamlineSample::StreamlineSample(
     m_RootFs = std::make_shared<RootFileSystem>();
     m_RootFs->mount("/media", mediaPath);
     m_RootFs->mount("/shaders/donut", frameworkShaderPath);
-    m_RootFs->mount("/native", nativeFS);
-#ifdef STREAMLINE_FEATURE_DLSS_RR
     m_RootFs->mount("/shaders/app", appShaderPath);
-#endif // STREAMLINE_FEATURE_DLSS_RR
+    m_RootFs->mount("/native", nativeFS);
     m_TextureCache = std::make_shared<TextureCache>(GetDevice(), m_RootFs, nullptr);
 
     m_ShaderFactory = std::make_shared<ShaderFactory>(GetDevice(), m_RootFs, "/shaders");
@@ -758,6 +756,7 @@ void StreamlineSample::RenderScene(nvrhi::IFramebuffer* framebuffer)
         auto dlssgConst = sl::DLSSGOptions{};
         dlssgConst.mode = m_ui.DLSSG_mode;
         dlssgConst.numFramesToGenerate = m_ui.DLSSG_numFrames - 1; // ui is multiplier (e.g. 2x), subtract 1 to count generated frames only
+        dlssgConst.enableUserInterfaceRecomposition = m_ui.DLSSG_enableUIRecomposition ? sl::Boolean::eTrue : sl::Boolean::eFalse;
 
         // Explicitly manage DLSS-G resources in order to prevent stutter when
         // temporarily disabled.
@@ -783,8 +782,10 @@ void StreamlineSample::RenderScene(nvrhi::IFramebuffer* framebuffer)
         int numFramesMaxMultiplier = 0;
         void* pDLSSGInputsProcessingFence{};
         uint64_t lastPresentDLSSGInputsProcessingFenceValue{};
+        bool vsyncSupported = true;
+        bool bIsDynamicMFGSupported = false;
         auto lastDLSSGFenceValue = NVWrapper::Get().GetDLSSGLastFenceValue();
-        NVWrapper::Get().QueryDLSSGState(estimatedVramUsage, fps_multiplier, status, minSize, numFramesMaxMultiplier, pDLSSGInputsProcessingFence, lastPresentDLSSGInputsProcessingFenceValue);
+        NVWrapper::Get().QueryDLSSGState(estimatedVramUsage, fps_multiplier, status, minSize, numFramesMaxMultiplier, pDLSSGInputsProcessingFence, lastPresentDLSSGInputsProcessingFenceValue, vsyncSupported, bIsDynamicMFGSupported);
         m_ui.DLSSG_numFramesMaxMultiplier = dm::max(numFramesMaxMultiplier + 1, 2);
 
         if (static_cast<int>(framebuffer->getFramebufferInfo().width) < minSize || 
@@ -798,8 +799,10 @@ void StreamlineSample::RenderScene(nvrhi::IFramebuffer* framebuffer)
 
         auto fenceValue = lastPresentDLSSGInputsProcessingFenceValue;
         // This is where we query DLSS-G FPS, estimated VRAM usage and status
-        NVWrapper::Get().QueryDLSSGState(estimatedVramUsage, fps_multiplier, status, minSize, numFramesMaxMultiplier, pDLSSGInputsProcessingFence, lastPresentDLSSGInputsProcessingFenceValue);
+        NVWrapper::Get().QueryDLSSGState(estimatedVramUsage, fps_multiplier, status, minSize, numFramesMaxMultiplier, pDLSSGInputsProcessingFence, lastPresentDLSSGInputsProcessingFenceValue, vsyncSupported, bIsDynamicMFGSupported);
         assert(fenceValue == lastPresentDLSSGInputsProcessingFenceValue);
+        m_ui.DLSSG_VsyncSupported = vsyncSupported;
+        m_ui.DLSSG_DynamicMFGSupported = bIsDynamicMFGSupported;
 
         if (pDLSSGInputsProcessingFence != nullptr)
         {

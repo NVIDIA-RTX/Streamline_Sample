@@ -183,13 +183,20 @@ endif()
         "src/DeviceManagerOverride/DeviceManagerOverride_DX12.cpp"
         "src/DeviceManagerOverride/DeviceManagerOverride_VK.cpp"
     )
+    file(GLOB src_imgui_overrides
+        "src/ImguiOverride/sl_imgui_nvrhi.h"
+        "src/ImguiOverride/sl_imgui_nvrhi.cpp"
+        "src/ImguiOverride/sl_imgui_renderer.h"
+        "src/ImguiOverride/sl_imgui_renderer.cpp"
+    )
 
 
 # Create exe and link
-add_executable(StreamlineSample WIN32 ${src_header} ${src_source} ${src_overrides})
+add_executable(StreamlineSample WIN32 ${src_header} ${src_source} ${src_overrides} ${src_imgui_overrides})
 source_group("Headers"              FILES ${src_header})
 source_group("Sources"              FILES ${src_source})
 source_group("DeviceManagerOverride"       FILES ${src_overrides})
+source_group("ImguiOverride"       FILES ${src_imgui_overrides})
 
 # Add AGS
 option(AMD_AGS "Add AMD AGS support" OFF)
