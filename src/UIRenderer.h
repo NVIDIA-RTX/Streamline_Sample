@@ -63,11 +63,7 @@ private:
     bool    m_dev_view = false;
     int     m_dev_view_dlss_mode = 0;
     int     m_dev_view_TopLevelDLSS = 1;
-    int     m_dev_view_RayTracing = 1;
     int     m_dev_view_dlssrr_mode = 0;
-
-    bool    m_last_rt_mode = false;
-    bool    m_rt_changed = false;
 
     // Command list for UI Color Alpha operations
     nvrhi::CommandListHandle m_UICommandList;
@@ -403,10 +399,6 @@ protected:
             }
 
 #ifdef STREAMLINE_FEATURE_DLSS_RR
-            // Check for Ray Tracing mode changes and handle functionality
-            m_rt_changed = (m_last_rt_mode != m_dev_view_RayTracing);
-            m_last_rt_mode = m_dev_view_RayTracing;
-
             // Automatically turn OFF DLSS-RR when RT is turned OFF
             if (m_ui.RayTracing_Mode == 0)
             {
@@ -629,6 +621,8 @@ protected:
                 ImGui::DragFloat("Sharpness", &m_ui.NIS_Sharpness, 0.05f, 0, 1);
             }
             if (! m_ui.NIS_Supported) popDisabled();
+
+
 
             
             if (ImGui::IsItemHovered()) m_ui.MouseOverUI = true;

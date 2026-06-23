@@ -239,6 +239,7 @@ public:
     int                                 Latewarp_active = 0;
     bool                                Latewarp_cleanup_needed = false;
 
+
     // UI Tagging Strategy for DLSS-G and other UI using features
     UITaggingStrategy                   UI_TaggingStrategy = UITaggingStrategy::UIAlpha;
 

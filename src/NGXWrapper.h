@@ -117,6 +117,7 @@ public:
         const donut::engine::IView *view,
         nvrhi::ITexture *output) override { };
 
+
     void TagResources_Latewarp(
         nvrhi::ICommandList *commandList,
         const donut::engine::IView *view,
@@ -135,6 +136,7 @@ public:
     void SetNISOptions(const sl::NISOptions consts) override { };
     void EvaluateNIS(nvrhi::ICommandList *commandList) override { };
     void CleanupNIS(bool wfi) override { };
+
 
     void SetDeepDVCOptions(const sl::DeepDVCOptions consts) override { };
     void QueryDeepDVCState(uint64_t &estimatedVRamUsage) override { };

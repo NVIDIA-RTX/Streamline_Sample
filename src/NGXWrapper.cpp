@@ -374,6 +374,7 @@ void NGXWrapper::FeatureLoad(sl::Feature feature, const bool turn_on) {
                 NVSDK_NGX_VULKAN_ReleaseFeature(m_latewarp_handle);
             }
 #endif
+                m_latewarp_handle = nullptr;
             }
             m_latewarp_shouldLoad = false;
             break;
@@ -590,11 +591,13 @@ NVSDK_NGX_Resource_VK TextureToResourceVK(nvrhi::ITexture * tex, nvrhi::TextureS
 }
 
 #if STREAMLINE_FEATURE_LATEWARP
-void NGXWrapper::SetLatewarpOptions(const sl::LatewarpOptions& options) {}
+void NGXWrapper::SetLatewarpOptions(const sl::LatewarpOptions& options) { (void)options; }
 
 void NGXWrapper::CleanupLatewarp(bool wfi)
 {
     // non swap-chain hooking has no extra resources
+    (void)wfi;
+    FeatureLoad(sl::kFeatureLatewarp, false);
 }
 
 void NGXWrapper::EvaluateLatewarp(donut::app::DeviceManager& manager, nvrhi::ICommandList* commandList, RenderTargets* renderTargets, nvrhi::ITexture* inputColor, nvrhi::ITexture* outputColor, const donut::engine::IView* view) {

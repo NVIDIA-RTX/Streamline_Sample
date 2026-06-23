@@ -488,6 +488,7 @@ void SLWrapper::UpdateFeatureAvailable(donut::app::DeviceManager* deviceManager)
     else log::warning("DeepDVC is not fully functional on this system.");
 #endif
 
+
 #ifdef STREAMLINE_FEATURE_LATEWARP
     sl::FeatureRequirements latewarp_requirements;
     slGetFeatureRequirements(sl::kFeatureLatewarp, latewarp_requirements);
@@ -695,6 +696,7 @@ void SLWrapper::CleanupNIS(bool wfi) {
     // add an exception for eErrorMissingOrInvalidAPI for NIS plugin that doesn't export slFreeResources
     successCheck((result == sl::Result::eErrorMissingOrInvalidAPI ? sl::Result::eOk : result), "slFreeResources_NIS");
 }
+
 
 void SLWrapper::SetDeepDVCOptions(const sl::DeepDVCOptions consts)
 {
@@ -1272,6 +1274,7 @@ void SLWrapper::TagResources_DeepDVC(
     successCheck(SetTag(inputs, _countof(inputs), cmdbuffer), "slSetTag_deepdvc");
 }
 
+
 void SLWrapper::TagResources_Latewarp(
     nvrhi::ICommandList* commandList,
     const donut::engine::IView* view,
@@ -1280,39 +1283,6 @@ void SLWrapper::TagResources_Latewarp(
     nvrhi::ITexture* noWarpMask,
     sl::Extent backBufferExtent)
 {
-    if (!m_sl_initialised) {
-        log::warning("Streamline not initialised.");
-        return;
-    }
-    if (m_Device == nullptr) {
-        log::error("No device available.");
-        return;
-    }
-
-    void* cmdbuffer = GetNativeCommandList(commandList);
-    sl::Resource noWarpMaskResource{}, uiColorAlphaResource{}, backBufferResource{};
-
-    GetSLResource(commandList, backBufferResource, backBuffer, view);
-    sl::ResourceTag backbufferResourceTag =   sl::ResourceTag{ &backBufferResource,   sl::kBufferTypeBackbuffer,      sl::ResourceLifecycle::eValidUntilPresent, &backBufferExtent };
-
-    std::vector<sl::ResourceTag> inputs;
-    if (uiColorAlpha)
-    {
-        GetSLResource(commandList, uiColorAlphaResource, uiColorAlpha, view);
-        sl::Extent renderExtent{ 0, 0, uiColorAlpha->getDesc().width, uiColorAlpha->getDesc().height };
-        sl::ResourceTag uiColorAlphaResourceTag = sl::ResourceTag{ &uiColorAlphaResource, sl::kBufferTypeUIColorAndAlpha, sl::ResourceLifecycle::eValidUntilPresent, &renderExtent };
-        inputs.push_back(uiColorAlphaResourceTag);
-    }
-    if (noWarpMask)
-    {
-        GetSLResource(commandList, noWarpMaskResource, noWarpMask, view);
-        sl::Extent renderExtent{ 0, 0, noWarpMask->getDesc().width, noWarpMask->getDesc().height };
-        sl::ResourceTag noWarpMaskTag = sl::ResourceTag{ &noWarpMaskResource,   sl::kBufferTypeNoWarpMask,      sl::ResourceLifecycle::eValidUntilPresent, &renderExtent };
-        inputs.push_back(noWarpMaskTag);
-    }
-
-    inputs.push_back(backbufferResourceTag);
-    successCheck(SetTag(inputs.data(), static_cast<uint32_t>(inputs.size()), cmdbuffer), "slSetTag_latewarp");
 }
 
 void SLWrapper::UnTagResources_DeepDVC()
@@ -1423,6 +1393,8 @@ void SLWrapper::EvaluateNIS(nvrhi::ICommandList* commandList) {
     commandList->clearState();
 
 }
+
+
 
 void SLWrapper::EvaluateDeepDVC(nvrhi::ICommandList* commandList) {
 
@@ -1589,23 +1561,142 @@ void SLWrapper::QueryReflexStats(bool& reflex_lowLatencyAvailable, bool& reflex_
 
 }
 
+void SLWrapper::LatewarpPreSubmit(nvrhi::ICommandList* commandList)
+{
 #if STREAMLINE_FEATURE_LATEWARP
-void SLWrapper::SetLatewarpOptions(const sl::LatewarpOptions& options) {
-    static bool toggle = options.latewarpActive;
-    if (toggle != options.latewarpActive)
-    {
-        slLatewarpSetOptions(m_viewport, options);
-        toggle = options.latewarpActive;
+    if (!m_sl_initialised || !m_latewarp_available || !m_latewarp_shouldLoad) {
+        return;
     }
-}
+
+    if (commandList == nullptr)
+    {
+        log::warning("Latewarp pre-submit skipped because the command list is unavailable.");
+        return;
+    }
+
+    if (commandList->getDevice() == nullptr)
+    {
+        log::warning("Latewarp pre-submit skipped because the device is unavailable.");
+        return;
+    }
+
+    void* nativeQueue = nullptr;
+    switch (commandList->getDevice()->getGraphicsAPI())
+    {
+#if DONUT_WITH_DX12
+    case nvrhi::GraphicsAPI::D3D12:
+        nativeQueue = commandList->getDevice()->getNativeQueue(nvrhi::ObjectTypes::D3D12_CommandQueue, nvrhi::CommandQueue::Graphics);
+        break;
 #endif
 
+#if DONUT_WITH_VULKAN
+    case nvrhi::GraphicsAPI::VULKAN:
+        nativeQueue = commandList->getDevice()->getNativeQueue(nvrhi::ObjectTypes::VK_Queue, nvrhi::CommandQueue::Graphics);
+        break;
+#endif
+
+    default:
+        break;
+    }
+
+    if (nativeQueue == nullptr) {
+        log::warning("Latewarp pre-submit skipped because the native graphics queue is unavailable.");
+        return;
+    }
+
+    successCheck(slLatewarpPreSubmit(nativeQueue), "slLatewarpPreSubmit");
+#else
+    (void)commandList;
+#endif
+}
+
 bool SLWrapper::Get_Latewarp_SwapChainRecreation(bool& turn_on) const {
+#if STREAMLINE_FEATURE_LATEWARP
     turn_on = m_latewarp_shouldLoad;
     auto tmp = m_latewarp_triggerswapchainRecreation;
     return tmp;
+#else
+    turn_on = false;
+    return false;
+#endif
 }
 
 void SLWrapper::SetReflexCameraData(sl::FrameToken &frameToken, const sl::ReflexCameraData& cameraData) {
+#if STREAMLINE_FEATURE_LATEWARP
     slReflexSetCameraData(m_viewport, frameToken, cameraData);
+#else
+    (void)frameToken;
+    (void)cameraData;
+#endif
 }
+
+#if STREAMLINE_FEATURE_LATEWARP
+void SLWrapper::SetLatewarpOptions(const sl::LatewarpOptions& options) {
+    m_latewarp_shouldLoad = options.latewarpActive;
+
+    if (!m_sl_initialised || !m_latewarp_available) {
+        return;
+    }
+
+    successCheck(slLatewarpSetOptions(m_viewport, options), "slLatewarpSetOptions");
+}
+
+void SLWrapper::EvaluateLatewarp(donut::app::DeviceManager& manager, nvrhi::ICommandList* commandList, RenderTargets* renderTargets, nvrhi::ITexture* inputColor, nvrhi::ITexture* outputColor, const donut::engine::IView* view)
+{
+    if (!m_sl_initialised || !m_latewarp_available || !m_latewarp_shouldLoad) {
+        return;
+    }
+
+    if (commandList == nullptr || renderTargets == nullptr || inputColor == nullptr || outputColor == nullptr || view == nullptr) {
+        log::warning("Latewarp evaluate skipped due to missing inputs.");
+        return;
+    }
+
+    if (m_currentFrame == nullptr || renderTargets->Depth == nullptr) {
+        log::warning("Latewarp evaluate skipped because the frame token or depth input is unavailable.");
+        return;
+    }
+
+    void* nativeCommandList = GetNativeCommandList(commandList);
+    if (nativeCommandList == nullptr) {
+        log::warning("Failed to retrieve context for Latewarp evaluation.");
+        return;
+    }
+
+    sl::Resource outputColorResource{}, hudlessColorResource{}, depthResource{}, motionVectorsResource{};
+    GetSLResource(commandList, outputColorResource, outputColor, view);
+    GetSLResource(commandList, hudlessColorResource, inputColor, view);
+    GetSLResource(commandList, depthResource, renderTargets->Depth, view);
+
+    sl::Extent outputExtent{ 0, 0, outputColor->getDesc().width, outputColor->getDesc().height };
+    sl::Extent hudlessExtent{ 0, 0, inputColor->getDesc().width, inputColor->getDesc().height };
+    sl::Extent depthExtent{ 0, 0, renderTargets->Depth->getDesc().width, renderTargets->Depth->getDesc().height };
+
+    sl::ResourceTag outputTag = sl::ResourceTag{ &outputColorResource, sl::kBufferTypeScalingOutputColor, sl::ResourceLifecycle::eValidUntilEvaluate, &outputExtent };
+    sl::ResourceTag hudlessTag = sl::ResourceTag{ &hudlessColorResource, sl::kBufferTypeHUDLessColor, sl::ResourceLifecycle::eValidUntilEvaluate, &hudlessExtent };
+    sl::ResourceTag depthTag = sl::ResourceTag{ &depthResource, sl::kBufferTypeDepth, sl::ResourceLifecycle::eValidUntilEvaluate, &depthExtent };
+
+    sl::ViewportHandle viewHandle(m_viewport);
+    std::vector<const sl::BaseStructure*> inputs;
+    inputs.reserve(6);
+    std::vector<sl::Extent> extents;
+    extents.reserve(2);
+    std::vector<sl::ResourceTag> tags;
+    tags.reserve(2);
+    inputs.push_back(&viewHandle);
+    inputs.push_back(reinterpret_cast<const sl::BaseStructure*>(&outputTag));
+    inputs.push_back(reinterpret_cast<const sl::BaseStructure*>(&hudlessTag));
+    inputs.push_back(reinterpret_cast<const sl::BaseStructure*>(&depthTag));
+
+    if (renderTargets->MotionVectors != nullptr) {
+        GetSLResource(commandList, motionVectorsResource, renderTargets->MotionVectors, view);
+        extents.emplace_back(sl::Extent{ 0, 0, renderTargets->MotionVectors->getDesc().width, renderTargets->MotionVectors->getDesc().height });
+        tags.emplace_back(sl::ResourceTag{ &motionVectorsResource, sl::kBufferTypeMotionVectors, sl::ResourceLifecycle::eValidUntilEvaluate, &extents.back() });
+        inputs.push_back(reinterpret_cast<const sl::BaseStructure*>(&tags.back()));
+    }
+
+    successCheck(slEvaluateFeature(sl::kFeatureLatewarp, *m_currentFrame, inputs.data(), static_cast<uint32_t>(inputs.size()), nativeCommandList), "slEvaluateFeature_Latewarp");
+
+    commandList->clearState();
+}
+#endif

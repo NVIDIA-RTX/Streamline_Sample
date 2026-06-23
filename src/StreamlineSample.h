@@ -194,6 +194,7 @@ private:
     //Views
     std::shared_ptr<IView>                          m_View;
     bool                                            m_PreviousViewsValid = false;
+    uint32_t                                        m_lastLatewarpCameraFrame = ~0u;
     std::shared_ptr<IView>                          m_ViewPrevious;
     std::shared_ptr<IView>                          m_TonemappingView;
 
@@ -255,6 +256,7 @@ public:
     // Functions of interest
     bool SetupView();
     void CreateRenderPasses(bool& exposureResetRequired, float lodBias);
+    void SubmitLatewarpCameraData();
     virtual void RenderScene(nvrhi::IFramebuffer* framebuffer) override;
 
     void SetBackBufferExtent(sl::Extent &backBufferExtent)

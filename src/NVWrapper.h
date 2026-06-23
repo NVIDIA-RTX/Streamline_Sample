@@ -435,6 +435,7 @@ protected:
     bool m_nis_available = false;
     sl::NISOptions m_nis_consts{};
 
+
     bool m_deepdvc_available = false;
     sl::DeepDVCOptions m_deepdvc_consts{};
 
@@ -586,6 +587,7 @@ public:
     virtual void EvaluateNIS(nvrhi::ICommandList *commandList) = 0;
     virtual void CleanupNIS(bool wfi) = 0;
 
+
     virtual void SetDeepDVCOptions(const sl::DeepDVCOptions consts) = 0;
     bool GetDeepDVCAvailable() { return m_deepdvc_available; }
     bool GetDeepDVCLastEnable() { return m_deepdvc_consts.mode != sl::DeepDVCMode::eOff; }
@@ -626,15 +628,16 @@ public:
     bool GetLatewarpAvailable() { return m_latewarp_available; }
     virtual bool Get_Latewarp_SwapChainRecreation(bool &turn_on) const { return false; };
     virtual void SetReflexCameraData(sl::FrameToken &frameToken, const sl::ReflexCameraData &cameraData) = 0;
+    virtual void LatewarpPreSubmit(nvrhi::ICommandList *commandList) { (void)commandList; }
 #if STREAMLINE_FEATURE_LATEWARP
     virtual void SetLatewarpOptions(const sl::LatewarpOptions &options) = 0;
+    virtual void EvaluateLatewarp(donut::app::DeviceManager& manager, nvrhi::ICommandList *commandList, RenderTargets *renderTargets, nvrhi::ITexture *inputColor, nvrhi::ITexture *outputColor, const donut::engine::IView *view) = 0;
     void Set_Latewarp_SwapChainRecreation(bool on)
     {
         m_latewarp_triggerswapchainRecreation = true;
         m_latewarp_shouldLoad = on;
     }
     void Quiet_Latewarp_SwapChainRecreation() { m_latewarp_triggerswapchainRecreation = false; }
-    virtual void EvaluateLatewarp(donut::app::DeviceManager& manager, nvrhi::ICommandList *commandList, RenderTargets *renderTargets, nvrhi::ITexture *inputColor, nvrhi::ITexture *outputColor, const donut::engine::IView *view) = 0;
     virtual void CleanupLatewarp(bool wfi) = 0;
 #endif
 };

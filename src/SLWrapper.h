@@ -151,6 +151,7 @@ public:
         nvrhi::ICommandList* commandList,
         const donut::engine::IView* view,
         nvrhi::ITexture* output) override;
+
     
     void TagResources_Latewarp(
         nvrhi::ICommandList* commandList,
@@ -178,6 +179,7 @@ public:
     void EvaluateNIS(nvrhi::ICommandList* commandList) override;
     void CleanupNIS(bool wfi) override;
 
+
     void SetDeepDVCOptions(const sl::DeepDVCOptions consts) override;
     void QueryDeepDVCState(uint64_t& estimatedVRamUsage) override;
     void EvaluateDeepDVC(nvrhi::ICommandList* commandList) override;
@@ -204,9 +206,10 @@ public:
 
     bool Get_Latewarp_SwapChainRecreation(bool& turn_on) const override;
     void SetReflexCameraData(sl::FrameToken& frameToken, const sl::ReflexCameraData& cameraData) override;
+    void LatewarpPreSubmit(nvrhi::ICommandList* commandList) override;
 #if STREAMLINE_FEATURE_LATEWARP
     void SetLatewarpOptions(const sl::LatewarpOptions& options) override;
-    void EvaluateLatewarp(donut::app::DeviceManager& manager, nvrhi::ICommandList* commandList, RenderTargets* renderTargets, nvrhi::ITexture* inputColor, nvrhi::ITexture* outputColor, const donut::engine::IView* view) override {}
+    void EvaluateLatewarp(donut::app::DeviceManager& manager, nvrhi::ICommandList* commandList, RenderTargets* renderTargets, nvrhi::ITexture* inputColor, nvrhi::ITexture* outputColor, const donut::engine::IView* view) override;
     void CleanupLatewarp(bool wfi) override;
 #endif
 

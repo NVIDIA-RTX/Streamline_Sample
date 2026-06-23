@@ -57,6 +57,11 @@ using namespace donut::engine;
 using namespace donut::render;
 using namespace donut::render;
 
+namespace
+{
+    constexpr float kSampleCameraNearPlane = 0.01f;
+}
+
 // Constructor
 StreamlineSample::StreamlineSample(
     DeviceManager* deviceManager,
@@ -237,32 +242,49 @@ StreamlineSample::~StreamlineSample()
 void StreamlineSample::SetLatewarpOptions()
 {
 #if STREAMLINE_FEATURE_LATEWARP
-    sl::LatewarpOptions lwOptions;
+    sl::LatewarpOptions lwOptions{};
     lwOptions.latewarpActive = m_ui.Latewarp_active;
     NVWrapper::Get().SetLatewarpOptions(lwOptions);
 #endif
 
-    if (!m_View || !m_ViewPrevious || !m_ui.Latewarp_active)
+    if (!m_ui.Latewarp_active)
     {
+        m_lastLatewarpCameraFrame = ~0u;
+        return;
+    }
+}
+
+void StreamlineSample::SubmitLatewarpCameraData()
+{
+    if (!m_ui.Latewarp_active)
+    {
+        m_lastLatewarpCameraFrame = ~0u;
+        return;
+    }
+
+    std::shared_ptr<PlanarView> planarView = std::dynamic_pointer_cast<PlanarView, IView>(m_View);
+    std::shared_ptr<PlanarView> planarViewPrev = std::dynamic_pointer_cast<PlanarView, IView>(m_ViewPrevious);
+    if (!planarView || !planarViewPrev)
+    {
+        m_lastLatewarpCameraFrame = ~0u;
         return;
     }
 
     sl::ReflexCameraData cameraData{};
-    // m_ViewPrevious is set at the end of Render(), so we need to use a local copy
-    std::shared_ptr<PlanarView> planarView = std::dynamic_pointer_cast<PlanarView, IView>(m_View);
-    std::shared_ptr<PlanarView> planarViewPrev = std::dynamic_pointer_cast<PlanarView, IView>(m_ViewPrevious);
     cameraData.worldToViewMatrix = make_sl_float4x4(affineToHomogeneous(planarView->GetViewMatrix()));
     cameraData.viewToClipMatrix = make_sl_float4x4(planarView->GetProjectionMatrix(false));
-    static sl::float4x4 prevRenderedWorldToViewMatrix = cameraData.worldToViewMatrix;
-    static sl::float4x4 prevRenderedViewToClipMatrix = cameraData.viewToClipMatrix;
-    cameraData.prevRenderedWorldToViewMatrix = prevRenderedWorldToViewMatrix;
-    cameraData.prevRenderedViewToClipMatrix = prevRenderedViewToClipMatrix;
+    cameraData.prevRenderedWorldToViewMatrix = make_sl_float4x4(affineToHomogeneous(planarViewPrev->GetViewMatrix()));
+    cameraData.prevRenderedViewToClipMatrix = make_sl_float4x4(planarViewPrev->GetProjectionMatrix(false));
 
     sl::FrameToken *frameToken = NVWrapper::Get().GetCurrentFrameToken();
-    NVWrapper::Get().SetReflexCameraData(*frameToken, cameraData);
+    if (frameToken == nullptr)
+    {
+        return;
+    }
 
-    prevRenderedWorldToViewMatrix = cameraData.worldToViewMatrix;
-    prevRenderedViewToClipMatrix = cameraData.viewToClipMatrix;
+    const uint32_t frameIndex = static_cast<uint32_t>(*frameToken);
+    m_lastLatewarpCameraFrame = frameIndex;
+    NVWrapper::Get().SetReflexCameraData(*frameToken, cameraData);
 }
 
 // Functions of interest
@@ -491,7 +513,6 @@ bool StreamlineSample::SetupView()
 
     dm::affine3 viewMatrix;
     float verticalFov = dm::radians(m_CameraVerticalFov);
-    float zNear = 0.01f;
     viewMatrix = m_FirstPersonCamera.GetWorldToViewMatrix();
 
     bool topologyChanged = false;
@@ -505,7 +526,7 @@ bool StreamlineSample::SetupView()
             topologyChanged = true;
         }
 
-        float4x4 projection = perspProjD3DStyleReverse(verticalFov, float(m_RenderingRectSize.x) / m_RenderingRectSize.y, zNear);
+        float4x4 projection = perspProjD3DStyleReverse(verticalFov, float(m_RenderingRectSize.x) / m_RenderingRectSize.y, kSampleCameraNearPlane);
 
         planarView->SetViewport(nvrhi::Viewport((float) m_RenderingRectSize.x, (float)m_RenderingRectSize.y));
         planarView->SetPixelOffset(pixelOffset);
@@ -529,7 +550,7 @@ bool StreamlineSample::SetupView()
             topologyChanged = true;
         }
 
-        float4x4 projection = perspProjD3DStyleReverse(verticalFov, float(m_RenderingRectSize.x) / m_RenderingRectSize.y, zNear);
+        float4x4 projection = perspProjD3DStyleReverse(verticalFov, float(m_RenderingRectSize.x) / m_RenderingRectSize.y, kSampleCameraNearPlane);
 
         tonemappingPlanarView->SetViewport(nvrhi::Viewport((float)m_DisplaySize.x, (float)m_DisplaySize.y));
         tonemappingPlanarView->SetMatrices(viewMatrix, projection);
@@ -859,18 +880,6 @@ void StreamlineSample::RenderScene(nvrhi::IFramebuffer* framebuffer)
 #if STREAMLINE_FEATURE_LATEWARP
     if (NVWrapper::Get().GetLatewarpAvailable())
     {
-        // Latewarp
-        bool prevLatewarpWanted;
-        NVWrapper::Get().Get_Latewarp_SwapChainRecreation(prevLatewarpWanted);
-
-        bool latewarpWanted = m_ui.Latewarp_active != 0;
-
-        // If there is a change, trigger a swapchain recreation
-        if (prevLatewarpWanted != latewarpWanted)
-        {
-            NVWrapper::Get().Set_Latewarp_SwapChainRecreation(latewarpWanted);
-        }
-        
     }
     if (m_ui.Latewarp_cleanup_needed)
     {
@@ -1115,6 +1124,8 @@ void StreamlineSample::RenderScene(nvrhi::IFramebuffer* framebuffer)
             needNewPasses = true;
         }
 
+        SubmitLatewarpCameraData();
+
         if (needNewPasses)
         {
             CreateRenderPasses(exposureResetRequired, lodBias);
@@ -1268,13 +1279,12 @@ void StreamlineSample::RenderScene(nvrhi::IFramebuffer* framebuffer)
     {
         // This section of code updates the streamline constants every frame. Regardless of whether we are utilising the streamline plugins, as long as streamline is in use, we must set its constants.
 
-        constexpr float zNear = 0.1f;
         constexpr float zFar = 200.f;
 
         affine3 viewReprojection = m_View->GetChildView(ViewType::PLANAR, 0)->GetInverseViewMatrix() * m_ViewPrevious->GetViewMatrix();
         float4x4 reprojectionMatrix = inverse(m_View->GetProjectionMatrix(false)) * affineToHomogeneous(viewReprojection) * m_ViewPrevious->GetProjectionMatrix(false);
         float aspectRatio = float(m_RenderingRectSize.x) / float(m_RenderingRectSize.y);
-        float4x4 projection = perspProjD3DStyleReverse(dm::radians(m_CameraVerticalFov), aspectRatio, zNear);
+        float4x4 projection = m_View->GetProjectionMatrix(false);
 
         float2 jitterOffset = std::dynamic_pointer_cast<PlanarView, IView>(m_View)->GetPixelOffset();
 
@@ -1283,7 +1293,7 @@ void StreamlineSample::RenderScene(nvrhi::IFramebuffer* framebuffer)
         slConstants.cameraFOV = dm::radians(m_CameraVerticalFov);
         slConstants.cameraFar = zFar;
         slConstants.cameraMotionIncluded = sl::Boolean::eTrue;
-        slConstants.cameraNear = zNear;
+        slConstants.cameraNear = kSampleCameraNearPlane;
         slConstants.cameraPinholeOffset = { 0.f, 0.f };
         slConstants.cameraPos = make_sl_float3(m_FirstPersonCamera.GetPosition());
         slConstants.cameraFwd = make_sl_float3(m_FirstPersonCamera.GetDir());
@@ -1400,6 +1410,8 @@ void StreamlineSample::RenderScene(nvrhi::IFramebuffer* framebuffer)
 
     m_CommonPasses->BlitTexture(m_CommandList, m_RenderTargets->PreUIFramebuffer->GetFramebuffer(*m_View), texToDisplay, &m_BindingCache);
 
+    nvrhi::ITexture* finalColorBeforePresent = m_RenderTargets->PreUIColor;
+
     //
     // DO NIS
     //
@@ -1426,6 +1438,7 @@ void StreamlineSample::RenderScene(nvrhi::IFramebuffer* framebuffer)
             m_RenderTargets->NisColor);
 
         NVWrapper::Get().EvaluateNIS(m_CommandList);
+        finalColorBeforePresent = m_RenderTargets->PreUIColor;
     }
 
 
@@ -1447,7 +1460,9 @@ void StreamlineSample::RenderScene(nvrhi::IFramebuffer* framebuffer)
             m_View->GetChildView(ViewType::PLANAR, 0),
             m_RenderTargets->PreUIColor);
         NVWrapper::Get().EvaluateDeepDVC(m_CommandList);
+        finalColorBeforePresent = m_RenderTargets->PreUIColor;
     }
+
 
 #if STREAMLINE_FEATURE_LATEWARP
     if (m_ui.Latewarp_active)
@@ -1459,7 +1474,10 @@ void StreamlineSample::RenderScene(nvrhi::IFramebuffer* framebuffer)
             nullptr,
             m_backbufferViewportExtent
         );
-        NVWrapper::Get().EvaluateLatewarp(*GetDeviceManager(), m_CommandList, m_RenderTargets.get(), m_ui.EnableToneMapping ? m_RenderTargets->ColorspaceCorrectionColor : m_RenderTargets->AAResolvedColor, m_RenderTargets->PreUIColor, m_View->GetChildView(ViewType::PLANAR, 0));
+        nvrhi::ITexture* latewarpSource = finalColorBeforePresent;
+        nvrhi::ITexture* latewarpOutput = latewarpSource == m_RenderTargets->PreUIColor ? m_RenderTargets->NisColor : m_RenderTargets->PreUIColor;
+        NVWrapper::Get().EvaluateLatewarp(*GetDeviceManager(), m_CommandList, m_RenderTargets.get(), latewarpSource, latewarpOutput, m_View->GetChildView(ViewType::PLANAR, 0));
+        finalColorBeforePresent = latewarpOutput;
     }
 #endif
 
@@ -1478,13 +1496,13 @@ void StreamlineSample::RenderScene(nvrhi::IFramebuffer* framebuffer)
         engine::BlitParameters blitParams{};
         blitParams.targetFramebuffer = framebuffer;
         blitParams.targetViewport = backBufferViewport;
-        blitParams.sourceTexture = m_RenderTargets->PreUIColor;
+        blitParams.sourceTexture = finalColorBeforePresent;
 
         m_CommonPasses->BlitTexture(m_CommandList, blitParams, &m_BindingCache);
     }
     else
     {
-        m_CommandList->copyTexture(framebufferTexture, nvrhi::TextureSlice(), m_RenderTargets->PreUIColor, nvrhi::TextureSlice());
+        m_CommandList->copyTexture(framebufferTexture, nvrhi::TextureSlice(), finalColorBeforePresent, nvrhi::TextureSlice());
     }
 
     // DEBUG OVERLAY
@@ -1521,6 +1539,14 @@ void StreamlineSample::RenderScene(nvrhi::IFramebuffer* framebuffer)
 
     // CLOSE COMMANDLIST
     m_CommandList->close();
+
+#if STREAMLINE_FEATURE_LATEWARP
+    if (m_ui.Latewarp_active)
+    {
+        NVWrapper::Get().LatewarpPreSubmit(m_CommandList);
+    }
+#endif
+
     GetDevice()->executeCommandList(m_CommandList);
 
     // CLEANUP

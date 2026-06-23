@@ -313,51 +313,6 @@ bool DeviceManagerOverride_DX12::BeginFrame()
         NVWrapper::Get().Quiet_DLSSG_SwapChainRecreation();
     }
 #endif
-#if STREAMLINE_FEATURE_LATEWARP
-    bool turn_on_latewarp;
-    if (NVWrapper::Get().Get_Latewarp_SwapChainRecreation(turn_on_latewarp))
-    {
-        waitForQueue();
-
-        // Get new sizes
-        DXGI_SWAP_CHAIN_DESC1 newSwapChainDesc;
-        if (SUCCEEDED(m_SwapChain->GetDesc1(&newSwapChainDesc))) {
-            m_SwapChainDesc.Width = newSwapChainDesc.Width;
-            m_SwapChainDesc.Height = newSwapChainDesc.Height;
-            m_DeviceParams.backBufferWidth = newSwapChainDesc.Width;
-            m_DeviceParams.backBufferHeight = newSwapChainDesc.Height;
-        }
-
-        BackBufferResizing();
-
-        // Delete swapchain and resources
-        m_SwapChain->SetFullscreenState(false, nullptr);
-        ReleaseRenderTargets();
-
-        m_SwapChain = nullptr;
-
-        // Recreate Swapchain and resources 
-        RefCountPtr<IDXGISwapChain1> pSwapChain1_base;
-        auto hr = m_DxgiFactory2->CreateSwapChainForHwnd(m_GraphicsQueue, m_hWnd, &m_SwapChainDesc, &m_FullScreenDesc, nullptr, &pSwapChain1_base);
-        if (hr != S_OK)  donut::log::fatal("CreateSwapChainForHwnd failed");
-        hr = pSwapChain1_base->QueryInterface(IID_PPV_ARGS(&m_SwapChain));
-        if (hr != S_OK)  donut::log::fatal("QueryInterface failed");
-
-        // Disable DXGI's automatic Alt+Enter handling after swap chain recreation
-        hr = m_DxgiFactory2->MakeWindowAssociation(m_hWnd, DXGI_MWA_NO_ALT_ENTER);
-        if (FAILED(hr))
-        {
-            donut::log::warning("Failed to set MakeWindowAssociation after Latewarp swap chain recreation, error code = 0x%08x", hr);
-        }
-
-        if (!CreateRenderTargets()) 
-            donut::log::fatal("CreateRenderTarget failed");
-
-        BackBufferResized();
-
-        NVWrapper::Get().Quiet_Latewarp_SwapChainRecreation();
-    }
-#endif
     return true;
 }
 
