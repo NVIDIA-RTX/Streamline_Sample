@@ -77,5 +77,8 @@ public:
     vk::PhysicalDevice GetPhysicalDevice() { return m_VulkanPhysicalDevice; }
     const donut::app::DeviceCreationParameters& GetDeviceParams() { return m_DeviceParams; }
     DeviceManagerOverride_VK();
+
+private:
+    bool CreateDevice() final;
 };
 #endif

@@ -75,6 +75,25 @@ using namespace donut::app;
 DeviceManagerOverride_VK::DeviceManagerOverride_VK()
 {
 }
+bool DeviceManagerOverride_VK::CreateDevice()
+{
+    bool ok = DeviceManager_VK::CreateDevice();
+
+    if (ok)
+    {
+        sl::VulkanInfo vulkanInfo;
+        vulkanInfo.device = m_VulkanDevice;
+        vulkanInfo.instance = m_VulkanInstance;
+        vulkanInfo.physicalDevice = m_VulkanPhysicalDevice;
+        vulkanInfo.computeQueueIndex = 0;
+        vulkanInfo.computeQueueFamily = m_ComputeQueueFamily;
+        vulkanInfo.graphicsQueueIndex = 0;
+        vulkanInfo.graphicsQueueFamily = m_GraphicsQueueFamily;
+        NVWrapper::Get().SetDevice_raw(&vulkanInfo);
+    }
+
+    return ok;
+}
 
 DeviceManager* CreateVK()
 {
